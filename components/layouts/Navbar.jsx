@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from "framer-motion";
 const NAV_LINKS = [
   { name: "INICIO", href: "/", icon: Home },
   { name: "NOSOTROS", href: "/nosotros", icon: Info },
-  { name: "ADMISIÓN", href: "/admision", icon: ShieldCheck },
+  // { name: "ADMISIÓN", href: "/admision", icon: ShieldCheck },
   { name: "CONTACTO", href: "/contacto", icon: Mail },
 ];
 

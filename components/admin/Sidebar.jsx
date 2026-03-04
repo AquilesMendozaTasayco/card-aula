@@ -85,7 +85,7 @@ export default function Sidebar() {
   const rolLabel     = esAdmin ? "Administrador" : "Estudiante";
   const menuLabel    = esAdmin ? "Módulos Administrativos" : "Mi Espacio Académico";
   const subtitulo    = esAdmin ? "Panel Admin" : "Aula Estudiante";
-  const logoutRuta   = "/admin/login";
+  const logoutRuta   = "/login";
 
   // ─── Cerrar sesión ────────────────────────────────────────────────────────────
   const handleLogout = async () => {

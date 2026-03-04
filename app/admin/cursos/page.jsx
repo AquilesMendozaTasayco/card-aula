@@ -47,6 +47,7 @@ export default function AdminCursosPage() {
       setLoading(true);
       const [cSnap, eSnap] = await Promise.all([
         getDocs(query(collection(db, "cursos"), orderBy("createdAt", "desc"))),
+        // ⚠️ Cargamos desde "estudiantes" — el doc ID === UID de Auth
         getDocs(query(collection(db, "estudiantes"), orderBy("apellidos", "asc"))),
       ]);
       setCursos(cSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -71,7 +72,9 @@ export default function AdminCursosPage() {
 
   const subirPDF = async (e) => {
     const file = e.target.files[0];
-    if (!file || file.type !== "application/pdf") { Swal.fire({ icon: "warning", title: "Solo archivos PDF", confirmButtonColor: COLOR.rojo }); return; }
+    if (!file || file.type !== "application/pdf") {
+      Swal.fire({ icon: "warning", title: "Solo archivos PDF", confirmButtonColor: COLOR.rojo }); return;
+    }
     try {
       setSubiendo(true);
       const r = ref(storage, `cursos/pdfs/${Date.now()}_${file.name}`);
@@ -130,8 +133,8 @@ export default function AdminCursosPage() {
     setNuevaClase(CLASE_VACIA);
   };
 
-  const quitarContenido  = (id) => setForm(p => ({ ...p, contenidos: p.contenidos.filter(c => c.id !== id) }));
-  const quitarClase      = (id) => setForm(p => ({ ...p, clases: p.clases.filter(c => c.id !== id) }));
+  const quitarContenido     = (id) => setForm(p => ({ ...p, contenidos: p.contenidos.filter(c => c.id !== id) }));
+  const quitarClase         = (id) => setForm(p => ({ ...p, clases: p.clases.filter(c => c.id !== id) }));
   const quitarMaterialClase = (ci, mi) => setForm(p => {
     const clases = [...(p.clases || [])];
     clases[ci] = { ...clases[ci], materiales: clases[ci].materiales.filter((_, i) => i !== mi) };
@@ -172,10 +175,11 @@ export default function AdminCursosPage() {
     } catch { Swal.fire({ icon: "error", title: "Error al eliminar", confirmButtonColor: COLOR.rojo }); }
   };
 
+  // ── Matrícula — usa est.id que ahora === UID de Auth ─────────────────────
   const abrirMatricula = (curso) => { setShowMatricula(curso); setMatriculados(curso.matriculados || []); };
 
   const toggleMatricula = async (estId) => {
-    const ya = matriculados.includes(estId);
+    const ya    = matriculados.includes(estId);
     const nuevo = ya ? matriculados.filter(id => id !== estId) : [...matriculados, estId];
     setMatriculados(nuevo);
     try {
@@ -187,6 +191,20 @@ export default function AdminCursosPage() {
     } catch {
       Swal.fire({ icon: "error", title: "Error al actualizar matrícula", confirmButtonColor: COLOR.rojo });
       setMatriculados(matriculados);
+    }
+  };
+
+  const toggleMatriculaEnForm = async (estId) => {
+    const esMat  = (form.matriculados || []).includes(estId);
+    const nuevos = esMat
+      ? (form.matriculados || []).filter(id => id !== estId)
+      : [...(form.matriculados || []), estId];
+    setForm(p => ({ ...p, matriculados: nuevos }));
+    if (editing) {
+      await updateDoc(doc(db, "cursos", editing.id), {
+        matriculados: esMat ? arrayRemove(estId) : arrayUnion(estId),
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
     }
   };
 
@@ -232,7 +250,7 @@ export default function AdminCursosPage() {
           </div>
         </div>
 
-        {/* GRID CURSOS */}
+        {/* GRID */}
         {loading ? (
           <div className="flex items-center justify-center py-40">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent"
@@ -271,13 +289,11 @@ export default function AdminCursosPage() {
                 <div className="p-5">
                   <h3 className="text-[15px] font-black text-slate-900 leading-tight mb-2 line-clamp-2">{curso.titulo}</h3>
                   <p className="text-[11px] text-stone-400 line-clamp-2 mb-4 leading-relaxed">{curso.descripcion}</p>
-
                   <div className="flex items-center gap-4 text-[10px] text-stone-400 font-bold mb-4 pb-4 border-b border-stone-100">
                     <span className="flex items-center gap-1"><PlayCircle size={11} /> {curso.contenidos?.length || 0} recursos</span>
                     <span className="flex items-center gap-1"><CalendarDays size={11} /> {curso.clases?.length || 0} clases</span>
                     <span className="flex items-center gap-1"><Users size={11} /> {curso.matriculados?.length || 0}</span>
                   </div>
-
                   <div className="flex gap-2">
                     <button onClick={() => abrirMatricula(curso)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[10px] font-black uppercase tracking-wider text-white"
@@ -335,21 +351,17 @@ export default function AdminCursosPage() {
 
                 <div className="overflow-y-auto flex-1 p-8">
 
-                  {/* ── General ── */}
+                  {/* General */}
                   {tab === "info" && (
                     <div className="space-y-6">
                       <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2 block">
-                          Nombre del Curso <span style={{ color: COLOR.rojo }}>*</span>
-                        </label>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2 block">Nombre del Curso <span style={{ color: COLOR.rojo }}>*</span></label>
                         <input value={form.titulo} onChange={e => setForm(p => ({ ...p, titulo: e.target.value }))}
                           placeholder="Ej: Fundamentos de Excel"
                           className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-400 transition-all" />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2 block">
-                          Descripción <span style={{ color: COLOR.rojo }}>*</span>
-                        </label>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2 block">Descripción <span style={{ color: COLOR.rojo }}>*</span></label>
                         <textarea rows={4} value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
                           placeholder="Describe de qué trata el curso..."
                           className="w-full border-2 border-stone-200 bg-transparent p-3 text-sm font-medium text-slate-900 outline-none focus:border-red-400 transition-all resize-none" />
@@ -381,7 +393,7 @@ export default function AdminCursosPage() {
                     </div>
                   )}
 
-                  {/* ── Contenido ── */}
+                  {/* Contenido */}
                   {tab === "contenido" && (
                     <div className="space-y-6">
                       <div className="p-5 bg-stone-50 border border-stone-200 space-y-4">
@@ -449,22 +461,20 @@ export default function AdminCursosPage() {
                     </div>
                   )}
 
-                  {/* ── Clases ── */}
+                  {/* Clases */}
                   {tab === "clases" && (
                     <div className="space-y-6">
                       <div className="p-5 bg-stone-50 border border-stone-200 space-y-4">
                         <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Nueva Clase</p>
                         <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Título de la clase</label>
-                          <input value={nuevaClase.titulo}
-                            onChange={e => setNuevaClase(p => ({ ...p, titulo: e.target.value }))}
+                          <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Título</label>
+                          <input value={nuevaClase.titulo} onChange={e => setNuevaClase(p => ({ ...p, titulo: e.target.value }))}
                             placeholder="Ej: Clase 1 — Introducción"
                             className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-400 transition-all" />
                         </div>
                         <div>
                           <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Descripción (opcional)</label>
-                          <textarea rows={2} value={nuevaClase.descripcion}
-                            onChange={e => setNuevaClase(p => ({ ...p, descripcion: e.target.value }))}
+                          <textarea rows={2} value={nuevaClase.descripcion} onChange={e => setNuevaClase(p => ({ ...p, descripcion: e.target.value }))}
                             placeholder="De qué trata esta clase..."
                             className="w-full border-2 border-stone-200 bg-transparent p-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 resize-none transition-all" />
                         </div>
@@ -474,7 +484,6 @@ export default function AdminCursosPage() {
                           <Plus size={13} /> Agregar Clase
                         </button>
                       </div>
-
                       <div className="space-y-3">
                         {(form.clases || []).length === 0
                           ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">Sin clases agregadas</p>
@@ -487,24 +496,15 @@ export default function AdminCursosPage() {
                                   <p className="text-[12px] font-black text-slate-900">{clase.titulo}</p>
                                   {clase.descripcion && <p className="text-[10px] text-stone-400 truncate">{clase.descripcion}</p>}
                                 </div>
-                                <button onClick={() => quitarClase(clase.id)}
-                                  className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 transition-colors rounded flex-shrink-0">
-                                  <X size={13} />
-                                </button>
+                                <button onClick={() => quitarClase(clase.id)} className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 rounded flex-shrink-0"><X size={13} /></button>
                               </div>
                               <div className="p-3 bg-stone-50">
                                 <div className="flex items-center justify-between mb-2">
-                                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">
-                                    Material ({(clase.materiales || []).length}) — opcional
-                                  </p>
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Material ({(clase.materiales || []).length}) — opcional</p>
                                   <label className="flex items-center gap-1 cursor-pointer text-[9px] font-black uppercase tracking-wider px-3 py-1.5 border border-stone-200 bg-white hover:bg-stone-50 transition-colors text-stone-500">
-                                    {subiendoMaterial
-                                      ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
-                                      : <Upload size={11} />
-                                    }
+                                    {subiendoMaterial ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} /> : <Upload size={11} />}
                                     Subir
-                                    <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*"
-                                      onChange={e => subirMaterialClase(e, ci)} className="hidden" />
+                                    <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" onChange={e => subirMaterialClase(e, ci)} className="hidden" />
                                   </label>
                                 </div>
                                 {(clase.materiales || []).length === 0
@@ -513,7 +513,7 @@ export default function AdminCursosPage() {
                                     <div key={mi} className="flex items-center gap-2 py-1.5">
                                       <FileText size={12} style={{ color: COLOR.naranja }} />
                                       <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{mat.nombre}</span>
-                                      <button onClick={() => quitarMaterialClase(ci, mi)} className="p-1 hover:text-red-500 text-stone-300 transition-colors"><X size={11} /></button>
+                                      <button onClick={() => quitarMaterialClase(ci, mi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
                                     </div>
                                   ))}
                               </div>
@@ -523,14 +523,12 @@ export default function AdminCursosPage() {
                     </div>
                   )}
 
-                  {/* ── Certificado ── */}
+                  {/* Certificado */}
                   {tab === "titulo" && (
                     <div className="space-y-6">
                       <div className="p-5 bg-stone-50 border border-stone-200">
                         <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-2">¿Qué es esto?</p>
-                        <p className="text-[12px] text-stone-500 leading-relaxed">
-                          Sube la plantilla del certificado que se entregará al estudiante al completar el 100% del curso. Puede ser imagen o PDF.
-                        </p>
+                        <p className="text-[12px] text-stone-500 leading-relaxed">Sube la plantilla del certificado que se entregará al completar el 100% del curso.</p>
                       </div>
                       {form.tituloFinal ? (
                         <div className="border border-stone-200 p-6 text-center bg-white">
@@ -549,19 +547,22 @@ export default function AdminCursosPage() {
                         </div>
                       ) : (
                         <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-stone-200 cursor-pointer hover:bg-stone-50 transition-all gap-3">
-                          {subiendo
-                            ? <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
-                            : <><Award size={36} className="text-stone-200" /><span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Subir certificado / título</span><span className="text-[9px] text-stone-300 font-bold">PDF, PNG, JPG</span></>
-                          }
+                          {subiendo ? <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
+                            : <><Award size={36} className="text-stone-200" /><span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Subir certificado / título</span><span className="text-[9px] text-stone-300 font-bold">PDF, PNG, JPG</span></>}
                           <input type="file" accept=".pdf,image/*" onChange={subirTitulo} className="hidden" />
                         </label>
                       )}
                     </div>
                   )}
 
-                  {/* ── Matrículas ── */}
+                  {/* Matrículas en modal editar/crear */}
                   {tab === "matriculas" && (
                     <div className="space-y-3">
+                      {!editing && (
+                        <div className="p-3 bg-amber-50 border border-amber-100 text-[11px] text-amber-700 font-medium">
+                          Guarda el curso primero para poder matricular estudiantes.
+                        </div>
+                      )}
                       <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">
                         {(form.matriculados || []).length} matriculado{(form.matriculados || []).length !== 1 ? "s" : ""}
                       </p>
@@ -581,19 +582,8 @@ export default function AdminCursosPage() {
                                   <p className="text-[10px] text-stone-400">{est.email}</p>
                                 </div>
                               </div>
-                              <button
-                                onClick={async () => {
-                                  const esMat = (form.matriculados || []).includes(est.id);
-                                  const nuevos = esMat ? (form.matriculados || []).filter(id => id !== est.id) : [...(form.matriculados || []), est.id];
-                                  setForm(p => ({ ...p, matriculados: nuevos }));
-                                  if (editing) {
-                                    await updateDoc(doc(db, "cursos", editing.id), {
-                                      matriculados: esMat ? arrayRemove(est.id) : arrayUnion(est.id),
-                                      updatedAt: serverTimestamp(),
-                                    });
-                                  }
-                                }}
-                                className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${mat ? "text-red-500 border border-red-200 hover:bg-red-50" : "text-white"}`}
+                              <button onClick={() => toggleMatriculaEnForm(est.id)} disabled={!editing}
+                                className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-40 ${mat ? "text-red-500 border border-red-200 hover:bg-red-50" : "text-white"}`}
                                 style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
                                 {mat ? "Quitar" : "Matricular"}
                               </button>
@@ -620,7 +610,7 @@ export default function AdminCursosPage() {
           )}
         </AnimatePresence>
 
-        {/* ── MODAL MATRÍCULAS RÁPIDO ── */}
+        {/* MODAL MATRÍCULAS RÁPIDO */}
         <AnimatePresence>
           {showMatricula && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -647,7 +637,7 @@ export default function AdminCursosPage() {
                 </div>
                 <div className="overflow-y-auto flex-1 p-5 space-y-2">
                   {estudiantes.length === 0
-                    ? <p className="text-center text-[11px] text-stone-300 font-bold py-12">No hay estudiantes</p>
+                    ? <p className="text-center text-[11px] text-stone-300 font-bold py-12">No hay estudiantes registrados</p>
                     : estudiantes.map(est => {
                       const mat = matriculados.includes(est.id);
                       return (
@@ -662,6 +652,7 @@ export default function AdminCursosPage() {
                               <p className="text-[10px] text-stone-400">{est.email}</p>
                             </div>
                           </div>
+                          {/* est.id === UID de Auth, así que la matrícula funcionará correctamente */}
                           <button onClick={() => toggleMatricula(est.id)}
                             className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${mat ? "border border-red-200 text-red-500 hover:bg-red-50" : "text-white"}`}
                             style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
