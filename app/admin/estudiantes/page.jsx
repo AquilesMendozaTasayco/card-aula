@@ -7,7 +7,7 @@ import {
   doc, serverTimestamp, query, orderBy
 } from "firebase/firestore";
 import {
-  createUserWithEmailAndPassword, deleteUser,
+  createUserWithEmailAndPassword,
   signInWithEmailAndPassword, getAuth
 } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
@@ -28,6 +28,44 @@ const CAMPO_VACIO = {
   telefono: "", dni: "", fechaNacimiento: "", genero: "",
   direccion: "", ciudad: "", estado: "Activo", observaciones: "",
 };
+
+// ─── Componentes auxiliares FUERA del componente principal ───────────────────
+// (esto evita que se re-creen en cada render y provoquen pérdida de foco)
+
+const Field = ({ label, icon: Icon, children, required }) => (
+  <div className="group">
+    <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">
+      {Icon && <Icon size={11} />} {label} {required && <span style={{ color: COLOR.rojo }}>*</span>}
+    </label>
+    {children}
+  </div>
+);
+
+const Input = ({ value, onChange, type = "text", placeholder, disabled }) => (
+  <input
+    type={type}
+    placeholder={placeholder}
+    disabled={disabled}
+    value={value || ""}
+    onChange={onChange}
+    className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none transition-all focus:border-red-400 placeholder:text-stone-300 disabled:opacity-40 disabled:cursor-not-allowed"
+  />
+);
+
+const Select = ({ value, onChange, opts }) => (
+  <div className="relative">
+    <select
+      value={value || ""}
+      onChange={onChange}
+      className="w-full appearance-none border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none transition-all focus:border-red-400"
+    >
+      <option value="">Seleccionar...</option>
+      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+    <ChevronDown size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+  </div>
+);
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function AdminEstudiantesPage() {
   const [estudiantes, setEstudiantes] = useState([]);
@@ -55,6 +93,9 @@ export default function AdminEstudiantesPage() {
   const abrirCrear = () => { setEditing(null); setForm(CAMPO_VACIO); setShowModal(true); };
   const abrirEditar = (est) => { setEditing(est); setForm({ ...CAMPO_VACIO, ...est, password: "" }); setShowModal(true); };
 
+  // Helper para actualizar un campo del formulario
+  const setField = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
+
   const guardar = async () => {
     if (!form.nombres || !form.apellidos || !form.email) {
       Swal.fire({ icon: "warning", title: "Campos obligatorios", text: "Nombres, apellidos y email son requeridos.", confirmButtonColor: COLOR.rojo }); return;
@@ -72,29 +113,23 @@ export default function AdminEstudiantesPage() {
         // ── EDITAR: solo actualiza datos, no toca Auth ──────────────────────
         const { password, ...datos } = form;
         await updateDoc(doc(db, "estudiantes", editing.id), { ...datos, updatedAt: serverTimestamp() });
-        // También actualiza la colección usuarios para mantener nombre sincronizado
         await updateDoc(doc(db, "usuarios", editing.id), {
           nombre: `${form.nombres} ${form.apellidos}`,
           updatedAt: serverTimestamp(),
-        }).catch(() => {}); // silencioso si no existe
+        }).catch(() => {});
 
         Swal.fire({ icon: "success", title: "Estudiante actualizado", timer: 1500, showConfirmButton: false });
       } else {
         // ── CREAR: Firebase Auth + Firestore con mismo UID ──────────────────
-        // Guardamos el usuario admin actual para no perder la sesión
         const adminActual = auth.currentUser;
 
-        // Crear cuenta en Firebase Auth
         const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
         const uid  = cred.user.uid;
 
-        // Cerrar la sesión recién creada (del estudiante) inmediatamente
-        // para no afectar la sesión del admin
         await auth.updateCurrentUser(adminActual);
 
         const { password, ...datos } = form;
 
-        // Documento en "estudiantes" con UID como ID
         await setDoc(doc(db, "estudiantes", uid), {
           ...datos,
           uid,
@@ -102,7 +137,6 @@ export default function AdminEstudiantesPage() {
           updatedAt: serverTimestamp(),
         });
 
-        // Documento en "usuarios" con rol estudiante (para el Sidebar y login)
         await setDoc(doc(db, "usuarios", uid), {
           nombre: `${form.nombres} ${form.apellidos}`,
           email:  form.email,
@@ -162,34 +196,6 @@ export default function AdminEstudiantesPage() {
 
   const filtrados = estudiantes.filter(e =>
     `${e.nombres} ${e.apellidos} ${e.email} ${e.dni}`.toLowerCase().includes(busqueda.toLowerCase())
-  );
-
-  const Field = ({ label, icon: Icon, children, required }) => (
-    <div className="group">
-      <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">
-        {Icon && <Icon size={11} />} {label} {required && <span style={{ color: COLOR.rojo }}>*</span>}
-      </label>
-      {children}
-    </div>
-  );
-
-  const Input = ({ field, type = "text", placeholder, disabled }) => (
-    <input type={type} placeholder={placeholder} disabled={disabled}
-      value={form[field] || ""}
-      onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
-      className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none transition-all focus:border-red-400 placeholder:text-stone-300 disabled:opacity-40 disabled:cursor-not-allowed" />
-  );
-
-  const Select = ({ field, opts }) => (
-    <div className="relative">
-      <select value={form[field] || ""}
-        onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
-        className="w-full appearance-none border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none transition-all focus:border-red-400">
-        <option value="">Seleccionar...</option>
-        {opts.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-      <ChevronDown size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-    </div>
   );
 
   return (
@@ -326,12 +332,24 @@ export default function AdminEstudiantesPage() {
                       <span className="h-px flex-1 bg-stone-100" /> Datos Personales <span className="h-px flex-1 bg-stone-100" />
                     </p>
                     <div className="grid grid-cols-2 gap-6">
-                      <Field label="Nombres" icon={User} required><Input field="nombres" placeholder="Ej: María Elena" /></Field>
-                      <Field label="Apellidos" icon={User} required><Input field="apellidos" placeholder="Ej: García López" /></Field>
-                      <Field label="DNI / Identificación" icon={Hash}><Input field="dni" placeholder="Ej: 12345678" /></Field>
-                      <Field label="Fecha de Nacimiento" icon={Calendar}><Input field="fechaNacimiento" type="date" /></Field>
-                      <Field label="Género" icon={User}><Select field="genero" opts={GENERO_OPTS} /></Field>
-                      <Field label="Estado" icon={GraduationCap}><Select field="estado" opts={ESTADO_OPTS} /></Field>
+                      <Field label="Nombres" icon={User} required>
+                        <Input value={form.nombres} onChange={setField("nombres")} placeholder="Ej: María Elena" />
+                      </Field>
+                      <Field label="Apellidos" icon={User} required>
+                        <Input value={form.apellidos} onChange={setField("apellidos")} placeholder="Ej: García López" />
+                      </Field>
+                      <Field label="DNI / Identificación" icon={Hash}>
+                        <Input value={form.dni} onChange={setField("dni")} placeholder="Ej: 12345678" />
+                      </Field>
+                      <Field label="Fecha de Nacimiento" icon={Calendar}>
+                        <Input value={form.fechaNacimiento} onChange={setField("fechaNacimiento")} type="date" />
+                      </Field>
+                      <Field label="Género" icon={User}>
+                        <Select value={form.genero} onChange={setField("genero")} opts={GENERO_OPTS} />
+                      </Field>
+                      <Field label="Estado" icon={GraduationCap}>
+                        <Select value={form.estado} onChange={setField("estado")} opts={ESTADO_OPTS} />
+                      </Field>
                     </div>
                   </div>
 
@@ -342,13 +360,23 @@ export default function AdminEstudiantesPage() {
                     </p>
                     <div className="grid grid-cols-2 gap-6">
                       <Field label="Correo Electrónico" icon={Mail} required>
-                        <Input field="email" type="email" placeholder="estudiante@correo.com"
-                          disabled={!!editing} />
+                        <Input
+                          value={form.email}
+                          onChange={setField("email")}
+                          type="email"
+                          placeholder="estudiante@correo.com"
+                          disabled={!!editing}
+                        />
                         {editing && <p className="text-[9px] text-stone-300 font-bold mt-1">El correo no se puede cambiar</p>}
                       </Field>
                       {!editing && (
                         <Field label="Contraseña inicial" icon={KeyRound} required>
-                          <Input field="password" type="text" placeholder="Mínimo 6 caracteres" />
+                          <Input
+                            value={form.password}
+                            onChange={setField("password")}
+                            type="text"
+                            placeholder="Mínimo 6 caracteres"
+                          />
                           <p className="text-[9px] text-stone-300 font-bold mt-1">El estudiante podrá cambiarla después</p>
                         </Field>
                       )}
@@ -361,9 +389,15 @@ export default function AdminEstudiantesPage() {
                       <span className="h-px flex-1 bg-stone-100" /> Contacto <span className="h-px flex-1 bg-stone-100" />
                     </p>
                     <div className="grid grid-cols-2 gap-6">
-                      <Field label="Teléfono" icon={Phone}><Input field="telefono" placeholder="+51 999 888 777" /></Field>
-                      <Field label="Ciudad" icon={MapPin}><Input field="ciudad" placeholder="Ej: Lima" /></Field>
-                      <Field label="Dirección" icon={MapPin}><Input field="direccion" placeholder="Av. Principal 123" /></Field>
+                      <Field label="Teléfono" icon={Phone}>
+                        <Input value={form.telefono} onChange={setField("telefono")} placeholder="+51 999 888 777" />
+                      </Field>
+                      <Field label="Ciudad" icon={MapPin}>
+                        <Input value={form.ciudad} onChange={setField("ciudad")} placeholder="Ej: Lima" />
+                      </Field>
+                      <Field label="Dirección" icon={MapPin}>
+                        <Input value={form.direccion} onChange={setField("direccion")} placeholder="Av. Principal 123" />
+                      </Field>
                     </div>
                   </div>
 
@@ -374,7 +408,7 @@ export default function AdminEstudiantesPage() {
                     </p>
                     <textarea rows={3} placeholder="Notas adicionales..."
                       value={form.observaciones || ""}
-                      onChange={e => setForm(p => ({ ...p, observaciones: e.target.value }))}
+                      onChange={setField("observaciones")}
                       className="w-full border-2 border-stone-200 bg-transparent p-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-red-400 resize-none" />
                   </div>
                 </div>
