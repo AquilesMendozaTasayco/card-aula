@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, query, orderBy, arrayUnion, arrayRemove
+  doc, serverTimestamp, query, orderBy, arrayUnion, arrayRemove, setDoc, getDoc
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
@@ -14,14 +14,53 @@ import {
   Upload, Youtube, FileText, Link as LinkIcon, Users,
   Eye, Award, PlayCircle, UserPlus, CheckCircle,
   ChevronDown, CalendarDays, Paperclip, File,
+  Info, Clock, BarChart3, GraduationCap, Hash,
 } from "lucide-react";
 
 const COLOR = { rojo: "#EF3340", naranja: "#D65B2B", marron: "#8B4513" };
+const PAGE_SIZE = 8;
 
 const CURSO_VACIO     = { titulo: "", descripcion: "", portadaUrl: "", activo: true, contenidos: [], clases: [], tituloFinal: "" };
 const CONTENIDO_VACIO = { tipo: "video", titulo: "", url: "" };
-const CLASE_VACIA     = { titulo: "", descripcion: "", materiales: [] };
+const CLASE_VACIA     = { titulo: "", descripcion: "", fecha: "", hora: "", materiales: [], videosClase: [], archivosClase: [] };
 const ICON_TIPO       = { video: Youtube, pdf: FileText, enlace: LinkIcon, archivo: File };
+
+// ── Genera código único CURSO-EST ─────────────────────────────────────────
+function generarCodigo(cursoId, uid) {
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const c    = (cursoId || "").slice(-4).toUpperCase();
+  const u    = (uid    || "").slice(-4).toUpperCase();
+  return `${c}-${u}-${rand}`;
+}
+
+// ── Hook paginación ───────────────────────────────────────────────────────
+function usePaginacion(items, pageSize = PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.ceil(items.length / pageSize);
+  const slice = items.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => { setPage(1); }, [items.length]);
+  return { slice, page, setPage, totalPages };
+}
+
+// ── Pager UI ──────────────────────────────────────────────────────────────
+function Pager({ page, totalPages, setPage }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-2 pt-3">
+      <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+        className="px-3 py-1.5 text-[10px] font-black border border-stone-200 disabled:opacity-30 hover:bg-stone-50 transition-colors">
+        ‹
+      </button>
+      <span className="text-[10px] font-black text-stone-500 uppercase tracking-widest">
+        {page} / {totalPages}
+      </span>
+      <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
+        className="px-3 py-1.5 text-[10px] font-black border border-stone-200 disabled:opacity-30 hover:bg-stone-50 transition-colors">
+        ›
+      </button>
+    </div>
+  );
+}
 
 export default function AdminCursosPage() {
   const [cursos, setCursos]               = useState([]);
@@ -29,6 +68,7 @@ export default function AdminCursosPage() {
   const [loading, setLoading]             = useState(true);
   const [showModal, setShowModal]         = useState(false);
   const [showMatricula, setShowMatricula] = useState(null);
+  const [showDetalle, setShowDetalle]     = useState(null);
   const [editing, setEditing]             = useState(null);
   const [form, setForm]                   = useState(CURSO_VACIO);
   const [nuevoContenido, setNuevoContenido] = useState(CONTENIDO_VACIO);
@@ -40,6 +80,13 @@ export default function AdminCursosPage() {
   const [tab, setTab]                     = useState("info");
   const [matriculados, setMatriculados]   = useState([]);
 
+  // Búsquedas en modales de matrícula
+  const [busqMatModal, setBusqMatModal]   = useState("");
+  const [busqMatRapido, setBusqMatRapido] = useState("");
+
+  // Progreso de estudiantes (para marcar completado y código)
+  const [progresoMap, setProgresoMap]     = useState({}); // { uid: { cursoId: [...], codigos: {...} } }
+
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
@@ -47,7 +94,6 @@ export default function AdminCursosPage() {
       setLoading(true);
       const [cSnap, eSnap] = await Promise.all([
         getDocs(query(collection(db, "cursos"), orderBy("createdAt", "desc"))),
-        // ⚠️ Cargamos desde "estudiantes" — el doc ID === UID de Auth
         getDocs(query(collection(db, "estudiantes"), orderBy("apellidos", "asc"))),
       ]);
       setCursos(cSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -57,6 +103,20 @@ export default function AdminCursosPage() {
     } finally { setLoading(false); }
   };
 
+  // Carga progreso de todos los estudiantes relevantes para un curso
+  const fetchProgreso = async (cursoId) => {
+    const estIds = cursos.find(c => c.id === cursoId)?.matriculados || [];
+    const map = {};
+    await Promise.all(estIds.map(async (uid) => {
+      try {
+        const snap = await getDoc(doc(db, "estudiantes_progreso", uid));
+        if (snap.exists()) map[uid] = snap.data();
+      } catch {}
+    }));
+    setProgresoMap(prev => ({ ...prev, ...map }));
+  };
+
+  // ── Subidas ───────────────────────────────────────────────────────────
   const subirPortada = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     try {
@@ -86,19 +146,6 @@ export default function AdminCursosPage() {
     finally { setSubiendo(false); }
   };
 
-  const subirTitulo = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    try {
-      setSubiendo(true);
-      const r = ref(storage, `cursos/titulos/${Date.now()}_${file.name}`);
-      await uploadBytes(r, file);
-      const url = await getDownloadURL(r);
-      setForm(p => ({ ...p, tituloFinal: url }));
-      Swal.fire({ icon: "success", title: "Certificado cargado", timer: 1000, showConfirmButton: false });
-    } catch { Swal.fire({ icon: "error", title: "Error al subir", confirmButtonColor: COLOR.rojo }); }
-    finally { setSubiendo(false); }
-  };
-
   const subirMaterialClase = async (e, claseIdx) => {
     const file = e.target.files[0]; if (!file) return;
     try {
@@ -117,6 +164,26 @@ export default function AdminCursosPage() {
     finally { setSubiendoMaterial(false); }
   };
 
+  // Subir archivo de contenido de clase (PDF/doc/imagen)
+  const subirArchivoClase = async (e, claseIdx) => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      setSubiendoMaterial(true);
+      const r = ref(storage, `cursos/clases/contenido/${Date.now()}_${file.name}`);
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+      const archivo = { nombre: file.name, url, tipo: file.type.includes("pdf") ? "pdf" : "archivo" };
+      setForm(p => {
+        const clases = [...(p.clases || [])];
+        clases[claseIdx] = { ...clases[claseIdx], archivosClase: [...(clases[claseIdx].archivosClase || []), archivo] };
+        return { ...p, clases };
+      });
+      Swal.fire({ icon: "success", title: "Archivo subido", timer: 1000, showConfirmButton: false });
+    } catch { Swal.fire({ icon: "error", title: "Error al subir archivo", confirmButtonColor: COLOR.rojo }); }
+    finally { setSubiendoMaterial(false); }
+  };
+
+  // ── Contenidos ────────────────────────────────────────────────────────
   const agregarContenido = () => {
     if (!nuevoContenido.titulo || !nuevoContenido.url) {
       Swal.fire({ icon: "warning", title: "Completa título y URL", confirmButtonColor: COLOR.rojo }); return;
@@ -125,11 +192,47 @@ export default function AdminCursosPage() {
     setNuevoContenido(CONTENIDO_VACIO);
   };
 
+  // ── Clases ────────────────────────────────────────────────────────────
+  const agregarVideoAClase = (claseIdx) => {
+    const url = prompt("URL de YouTube:");
+    if (!url) return;
+    const titulo = prompt("Título del video:") || "Video";
+    setForm(p => {
+      const clases = [...(p.clases || [])];
+      clases[claseIdx] = {
+        ...clases[claseIdx],
+        videosClase: [...(clases[claseIdx].videosClase || []), { titulo, url, id: Date.now().toString() }],
+      };
+      return { ...p, clases };
+    });
+  };
+
+  const quitarVideoClase = (ci, vi) => setForm(p => {
+    const clases = [...(p.clases || [])];
+    clases[ci] = { ...clases[ci], videosClase: clases[ci].videosClase.filter((_, i) => i !== vi) };
+    return { ...p, clases };
+  });
+
+  const quitarArchivoClase = (ci, ai) => setForm(p => {
+    const clases = [...(p.clases || [])];
+    clases[ci] = { ...clases[ci], archivosClase: clases[ci].archivosClase.filter((_, i) => i !== ai) };
+    return { ...p, clases };
+  });
+
   const agregarClase = () => {
     if (!nuevaClase.titulo) {
       Swal.fire({ icon: "warning", title: "El título de la clase es requerido", confirmButtonColor: COLOR.rojo }); return;
     }
-    setForm(p => ({ ...p, clases: [...(p.clases || []), { ...nuevaClase, id: Date.now().toString(), materiales: [] }] }));
+    setForm(p => ({
+      ...p,
+      clases: [...(p.clases || []), {
+        ...nuevaClase,
+        id: Date.now().toString(),
+        materiales: [],
+        videosClase: [],
+        archivosClase: [],
+      }],
+    }));
     setNuevaClase(CLASE_VACIA);
   };
 
@@ -141,6 +244,16 @@ export default function AdminCursosPage() {
     return { ...p, clases };
   });
 
+  // Clases ordenadas por fecha
+  const clasesOrdenadas = useMemo(() => {
+    return [...(form.clases || [])].sort((a, b) => {
+      const da = a.fecha ? new Date(`${a.fecha}T${a.hora || "00:00"}`) : new Date(0);
+      const db_ = b.fecha ? new Date(`${b.fecha}T${b.hora || "00:00"}`) : new Date(0);
+      return da - db_;
+    });
+  }, [form.clases]);
+
+  // ── CRUD cursos ───────────────────────────────────────────────────────
   const abrirCrear  = () => { setEditing(null); setForm(CURSO_VACIO); setTab("info"); setShowModal(true); };
   const abrirEditar = (c) => { setEditing(c); setForm({ ...CURSO_VACIO, ...c }); setTab("info"); setShowModal(true); };
 
@@ -175,8 +288,13 @@ export default function AdminCursosPage() {
     } catch { Swal.fire({ icon: "error", title: "Error al eliminar", confirmButtonColor: COLOR.rojo }); }
   };
 
-  // ── Matrícula — usa est.id que ahora === UID de Auth ─────────────────────
-  const abrirMatricula = (curso) => { setShowMatricula(curso); setMatriculados(curso.matriculados || []); };
+  // ── Matrícula rápida ──────────────────────────────────────────────────
+  const abrirMatricula = async (curso) => {
+    setShowMatricula(curso);
+    setMatriculados(curso.matriculados || []);
+    setBusqMatRapido("");
+    await fetchProgreso(curso.id);
+  };
 
   const toggleMatricula = async (estId) => {
     const ya    = matriculados.includes(estId);
@@ -194,6 +312,46 @@ export default function AdminCursosPage() {
     }
   };
 
+  // ── Marcar completado manualmente ─────────────────────────────────────
+  const marcarCompletadoAdmin = async (cursoId, estId, estNombre) => {
+    const res = await Swal.fire({
+      title: `¿Marcar como completado?`,
+      html: `<p class="text-sm text-gray-600">Estudiante: <strong>${estNombre}</strong><br>Se generará un código único de certificado.</p>`,
+      icon: "question", showCancelButton: true,
+      confirmButtonColor: COLOR.rojo, cancelButtonColor: "#6b7280",
+      confirmButtonText: "Sí, marcar", cancelButtonText: "Cancelar",
+    });
+    if (!res.isConfirmed) return;
+
+    const codigo = generarCodigo(cursoId, estId);
+    try {
+      await setDoc(doc(db, "estudiantes_progreso", estId), {
+        [`completado_${cursoId}`]: true,
+        [`codigo_${cursoId}`]: codigo,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      setProgresoMap(prev => ({
+        ...prev,
+        [estId]: {
+          ...(prev[estId] || {}),
+          [`completado_${cursoId}`]: true,
+          [`codigo_${cursoId}`]: codigo,
+        },
+      }));
+
+      Swal.fire({
+        icon: "success",
+        title: "Curso marcado como completado",
+        html: `<p class="text-sm text-gray-600">Código generado:</p><p class="text-lg font-black tracking-widest mt-2" style="color:#EF3340">${codigo}</p>`,
+        confirmButtonColor: COLOR.rojo,
+      });
+    } catch {
+      Swal.fire({ icon: "error", title: "Error al marcar", confirmButtonColor: COLOR.rojo });
+    }
+  };
+
+  // ── Matrículas en modal de edición ────────────────────────────────────
   const toggleMatriculaEnForm = async (estId) => {
     const esMat  = (form.matriculados || []).includes(estId);
     const nuevos = esMat
@@ -208,8 +366,21 @@ export default function AdminCursosPage() {
     }
   };
 
+  // ── Filtros ───────────────────────────────────────────────────────────
   const filtrados = cursos.filter(c => c.titulo?.toLowerCase().includes(busqueda.toLowerCase()));
 
+  const estFiltradosModal = estudiantes.filter(e =>
+    `${e.nombres} ${e.apellidos} ${e.email}`.toLowerCase().includes(busqMatModal.toLowerCase())
+  );
+  const estFiltradosRapido = estudiantes.filter(e =>
+    `${e.nombres} ${e.apellidos} ${e.email}`.toLowerCase().includes(busqMatRapido.toLowerCase())
+  );
+
+  // Paginaciones
+  const pagModal  = usePaginacion(estFiltradosModal);
+  const pagRapido = usePaginacion(estFiltradosRapido);
+
+  // ── Helpers UI ────────────────────────────────────────────────────────
   const TabBtn = ({ id, label }) => (
     <button onClick={() => setTab(id)}
       className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap ${tab === id ? "" : "border-transparent text-stone-400 hover:text-slate-700"}`}
@@ -218,6 +389,13 @@ export default function AdminCursosPage() {
     </button>
   );
 
+  const formatFechaClase = (fecha, hora) => {
+    if (!fecha) return "Sin fecha";
+    const d = new Date(`${fecha}T${hora || "00:00"}`);
+    return d.toLocaleString("es-PE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-stone-50 p-6 md:p-10">
       <div className="mx-auto max-w-7xl">
@@ -279,11 +457,6 @@ export default function AdminCursosPage() {
                   <span className={`absolute top-3 left-3 px-2 py-1 text-[9px] font-black uppercase tracking-tighter shadow-sm ${curso.activo ? "bg-green-500 text-white" : "bg-stone-400 text-white"}`}>
                     {curso.activo ? "Activo" : "Inactivo"}
                   </span>
-                  {curso.tituloFinal && (
-                    <div className="absolute top-3 right-3 bg-yellow-400 p-1.5 rounded shadow" title="Tiene certificado">
-                      <Award size={13} className="text-yellow-900" />
-                    </div>
-                  )}
                 </div>
 
                 <div className="p-5">
@@ -295,6 +468,10 @@ export default function AdminCursosPage() {
                     <span className="flex items-center gap-1"><Users size={11} /> {curso.matriculados?.length || 0}</span>
                   </div>
                   <div className="flex gap-2">
+                    <button onClick={() => { setShowDetalle(curso); fetchProgreso(curso.id); }}
+                      className="p-2.5 border border-stone-200 hover:border-blue-200 text-stone-400 hover:text-blue-500 transition-colors" title="Ver detalle">
+                      <Info size={14} />
+                    </button>
                     <button onClick={() => abrirMatricula(curso)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[10px] font-black uppercase tracking-wider text-white"
                       style={{ backgroundColor: COLOR.naranja }}>
@@ -315,7 +492,185 @@ export default function AdminCursosPage() {
           </div>
         )}
 
-        {/* ── MODAL CREAR / EDITAR ── */}
+        {/* ═══════════════════════════════════════════════════════════════
+            MODAL DETALLE CURSO
+        ═══════════════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {showDetalle && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setShowDetalle(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+              <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden bg-white shadow-2xl flex flex-col">
+
+                <div className="h-1.5 w-full flex flex-shrink-0">
+                  <div className="h-full w-1/2" style={{ backgroundColor: COLOR.rojo }} />
+                  <div className="h-full w-1/4" style={{ backgroundColor: COLOR.naranja }} />
+                  <div className="h-full w-1/4" style={{ backgroundColor: COLOR.marron }} />
+                </div>
+
+                {/* Portada header */}
+                <div className="relative h-44 bg-stone-900 flex-shrink-0 overflow-hidden">
+                  {showDetalle.portadaUrl && (
+                    <img src={showDetalle.portadaUrl} className="h-full w-full object-cover opacity-60" alt="" />
+                  )}
+                  <div className="absolute inset-0 p-6 flex flex-col justify-end bg-gradient-to-t from-black/60">
+                    <span className={`self-start px-2 py-1 text-[9px] font-black uppercase tracking-tighter mb-2 ${showDetalle.activo ? "bg-green-500 text-white" : "bg-stone-400 text-white"}`}>
+                      {showDetalle.activo ? "Activo" : "Inactivo"}
+                    </span>
+                    <h2 className="text-xl font-black text-white leading-tight">{showDetalle.titulo}</h2>
+                  </div>
+                  <button onClick={() => setShowDetalle(null)}
+                    className="absolute top-4 right-4 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white transition-colors">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto flex-1 p-6 space-y-6">
+                  {/* Descripción */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">Descripción</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{showDetalle.descripcion || "—"}</p>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: "Recursos", value: showDetalle.contenidos?.length || 0, icon: PlayCircle },
+                      { label: "Clases", value: showDetalle.clases?.length || 0, icon: CalendarDays },
+                      { label: "Matriculados", value: showDetalle.matriculados?.length || 0, icon: Users },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div key={label} className="bg-stone-50 border border-stone-100 p-4 text-center">
+                        <Icon size={18} className="mx-auto mb-1 text-stone-400" />
+                        <p className="text-2xl font-black text-slate-900">{value}</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Contenidos */}
+                  {(showDetalle.contenidos || []).length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">Contenidos</p>
+                      <div className="space-y-1.5">
+                        {showDetalle.contenidos.map((c, i) => {
+                          const Icon = ICON_TIPO[c.tipo] || Paperclip;
+                          return (
+                            <div key={c.id || i} className="flex items-center gap-3 p-2.5 bg-stone-50 border border-stone-100">
+                              <Icon size={13} style={{ color: COLOR.naranja }} />
+                              <span className="text-[12px] font-bold text-slate-700 flex-1 truncate">{c.titulo}</span>
+                              <span className="text-[9px] font-black uppercase text-stone-400">{c.tipo}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Clases ordenadas */}
+                  {(showDetalle.clases || []).length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">Clases Programadas</p>
+                      <div className="space-y-2">
+                        {[...(showDetalle.clases || [])].sort((a, b) => {
+                          const da = a.fecha ? new Date(`${a.fecha}T${a.hora || "00:00"}`) : new Date(0);
+                          const db_ = b.fecha ? new Date(`${b.fecha}T${b.hora || "00:00"}`) : new Date(0);
+                          return da - db_;
+                        }).map((clase, i) => (
+                          <div key={clase.id || i} className="flex items-start gap-3 p-3 bg-stone-50 border border-stone-100">
+                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
+                              style={{ backgroundColor: COLOR.naranja }}>{i + 1}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] font-black text-slate-900">{clase.titulo}</p>
+                              {clase.fecha && (
+                                <p className="text-[10px] text-stone-400 font-bold mt-0.5 flex items-center gap-1">
+                                  <CalendarDays size={10} /> {formatFechaClase(clase.fecha, clase.hora)}
+                                </p>
+                              )}
+                              {clase.descripcion && <p className="text-[11px] text-stone-500 mt-1">{clase.descripcion}</p>}
+                              <div className="flex gap-3 mt-1 text-[9px] text-stone-400 font-bold">
+                                {(clase.videosClase || []).length > 0 && <span className="flex items-center gap-1"><Youtube size={10} /> {clase.videosClase.length} video{clase.videosClase.length !== 1 ? "s" : ""}</span>}
+                                {(clase.archivosClase || []).length > 0 && <span className="flex items-center gap-1"><FileText size={10} /> {clase.archivosClase.length} archivo{clase.archivosClase.length !== 1 ? "s" : ""}</span>}
+                                {(clase.materiales || []).length > 0 && <span className="flex items-center gap-1"><Paperclip size={10} /> {clase.materiales.length} material{clase.materiales.length !== 1 ? "es" : ""}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estudiantes matriculados + progreso */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">
+                      Estudiantes Matriculados ({(showDetalle.matriculados || []).length})
+                    </p>
+                    {(showDetalle.matriculados || []).length === 0 ? (
+                      <p className="text-[11px] text-stone-300 font-bold">Sin estudiantes matriculados</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {estudiantes.filter(e => (showDetalle.matriculados || []).includes(e.id)).map(est => {
+                          const prog = progresoMap[est.id] || {};
+                          const completado = prog[`completado_${showDetalle.id}`];
+                          const codigo = prog[`codigo_${showDetalle.id}`];
+                          return (
+                            <div key={est.id} className="flex items-center justify-between p-3 bg-white border border-stone-100">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-black"
+                                  style={{ backgroundColor: completado ? "#22c55e" : COLOR.rojo }}>
+                                  {completado ? <CheckCircle size={14} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
+                                </div>
+                                <div>
+                                  <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
+                                  {codigo ? (
+                                    <p className="text-[10px] font-black tracking-wider" style={{ color: COLOR.naranja }}>
+                                      <Hash size={9} className="inline mr-0.5" />{codigo}
+                                    </p>
+                                  ) : (
+                                    <p className="text-[10px] text-stone-400">{est.email}</p>
+                                  )}
+                                </div>
+                              </div>
+                              {!completado && (
+                                <button onClick={() => marcarCompletadoAdmin(showDetalle.id, est.id, `${est.nombres} ${est.apellidos}`)}
+                                  className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white flex items-center gap-1"
+                                  style={{ backgroundColor: "#22c55e" }}>
+                                  <CheckCircle size={11} /> Completado
+                                </button>
+                              )}
+                              {completado && (
+                                <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-green-600 border border-green-200 bg-green-50 flex items-center gap-1">
+                                  <GraduationCap size={11} /> Finalizado
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex-shrink-0 p-4 border-t border-stone-100 flex gap-2">
+                  <button onClick={() => { setShowDetalle(null); abrirEditar(showDetalle); }}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 text-[10px] font-black uppercase tracking-widest border border-stone-200 hover:bg-stone-50 text-stone-600 transition-colors">
+                    <Pencil size={13} /> Editar
+                  </button>
+                  <button onClick={() => setShowDetalle(null)}
+                    className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest text-white"
+                    style={{ backgroundColor: COLOR.rojo }}>
+                    Cerrar
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            MODAL CREAR / EDITAR
+        ═══════════════════════════════════════════════════════════════ */}
         <AnimatePresence>
           {showModal && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -345,13 +700,12 @@ export default function AdminCursosPage() {
                   <TabBtn id="info"       label="General" />
                   <TabBtn id="contenido"  label="Contenido" />
                   <TabBtn id="clases"     label="Clases" />
-                  <TabBtn id="titulo"     label="Certificado" />
                   <TabBtn id="matriculas" label="Matrículas" />
                 </div>
 
                 <div className="overflow-y-auto flex-1 p-8">
 
-                  {/* General */}
+                  {/* ── Tab General ── */}
                   {tab === "info" && (
                     <div className="space-y-6">
                       <div>
@@ -393,7 +747,7 @@ export default function AdminCursosPage() {
                     </div>
                   )}
 
-                  {/* Contenido */}
+                  {/* ── Tab Contenido ── */}
                   {tab === "contenido" && (
                     <div className="space-y-6">
                       <div className="p-5 bg-stone-50 border border-stone-200 space-y-4">
@@ -461,22 +815,35 @@ export default function AdminCursosPage() {
                     </div>
                   )}
 
-                  {/* Clases */}
+                  {/* ── Tab Clases (REDISEÑADO) ── */}
                   {tab === "clases" && (
                     <div className="space-y-6">
+                      {/* Formulario nueva clase */}
                       <div className="p-5 bg-stone-50 border border-stone-200 space-y-4">
                         <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Nueva Clase</p>
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Título</label>
-                          <input value={nuevaClase.titulo} onChange={e => setNuevaClase(p => ({ ...p, titulo: e.target.value }))}
-                            placeholder="Ej: Clase 1 — Introducción"
-                            className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-400 transition-all" />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Descripción (opcional)</label>
-                          <textarea rows={2} value={nuevaClase.descripcion} onChange={e => setNuevaClase(p => ({ ...p, descripcion: e.target.value }))}
-                            placeholder="De qué trata esta clase..."
-                            className="w-full border-2 border-stone-200 bg-transparent p-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 resize-none transition-all" />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="col-span-2">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Título <span style={{ color: COLOR.rojo }}>*</span></label>
+                            <input value={nuevaClase.titulo} onChange={e => setNuevaClase(p => ({ ...p, titulo: e.target.value }))}
+                              placeholder="Ej: Clase 1 — Introducción"
+                              className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-400 transition-all" />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Fecha</label>
+                            <input type="date" value={nuevaClase.fecha} onChange={e => setNuevaClase(p => ({ ...p, fecha: e.target.value }))}
+                              className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Hora</label>
+                            <input type="time" value={nuevaClase.hora} onChange={e => setNuevaClase(p => ({ ...p, hora: e.target.value }))}
+                              className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1.5 block">Descripción (opcional)</label>
+                            <textarea rows={2} value={nuevaClase.descripcion} onChange={e => setNuevaClase(p => ({ ...p, descripcion: e.target.value }))}
+                              placeholder="De qué trata esta clase..."
+                              className="w-full border-2 border-stone-200 bg-transparent p-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 resize-none transition-all" />
+                          </div>
                         </div>
                         <button onClick={agregarClase}
                           className="flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-white"
@@ -484,78 +851,101 @@ export default function AdminCursosPage() {
                           <Plus size={13} /> Agregar Clase
                         </button>
                       </div>
+
+                      {/* Lista de clases ORDENADAS POR FECHA */}
                       <div className="space-y-3">
-                        {(form.clases || []).length === 0
+                        {clasesOrdenadas.length === 0
                           ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">Sin clases agregadas</p>
-                          : (form.clases || []).map((clase, ci) => (
-                            <div key={clase.id || ci} className="bg-white border border-stone-200 overflow-hidden">
-                              <div className="flex items-center gap-3 p-4 border-b border-stone-100">
-                                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
-                                  style={{ backgroundColor: COLOR.naranja }}>{ci + 1}</div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[12px] font-black text-slate-900">{clase.titulo}</p>
-                                  {clase.descripcion && <p className="text-[10px] text-stone-400 truncate">{clase.descripcion}</p>}
+                          : clasesOrdenadas.map((clase, ci) => {
+                            // Encontrar índice real en form.clases para editar
+                            const realIdx = (form.clases || []).findIndex(c => c.id === clase.id);
+                            return (
+                              <div key={clase.id || ci} className="bg-white border border-stone-200 overflow-hidden">
+                                <div className="flex items-center gap-3 p-4 border-b border-stone-100">
+                                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
+                                    style={{ backgroundColor: COLOR.naranja }}>{ci + 1}</div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[12px] font-black text-slate-900">{clase.titulo}</p>
+                                    {clase.fecha && (
+                                      <p className="text-[10px] text-stone-400 font-bold flex items-center gap-1 mt-0.5">
+                                        <CalendarDays size={10} /> {formatFechaClase(clase.fecha, clase.hora)}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <button onClick={() => quitarClase(clase.id)} className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 rounded flex-shrink-0"><X size={13} /></button>
                                 </div>
-                                <button onClick={() => quitarClase(clase.id)} className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 rounded flex-shrink-0"><X size={13} /></button>
-                              </div>
-                              <div className="p-3 bg-stone-50">
-                                <div className="flex items-center justify-between mb-2">
-                                  <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Material ({(clase.materiales || []).length}) — opcional</p>
-                                  <label className="flex items-center gap-1 cursor-pointer text-[9px] font-black uppercase tracking-wider px-3 py-1.5 border border-stone-200 bg-white hover:bg-stone-50 transition-colors text-stone-500">
-                                    {subiendoMaterial ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} /> : <Upload size={11} />}
-                                    Subir
-                                    <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" onChange={e => subirMaterialClase(e, ci)} className="hidden" />
-                                  </label>
-                                </div>
-                                {(clase.materiales || []).length === 0
-                                  ? <p className="text-[9px] text-stone-300 font-bold">Sin material aún</p>
-                                  : (clase.materiales || []).map((mat, mi) => (
-                                    <div key={mi} className="flex items-center gap-2 py-1.5">
-                                      <FileText size={12} style={{ color: COLOR.naranja }} />
-                                      <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{mat.nombre}</span>
-                                      <button onClick={() => quitarMaterialClase(ci, mi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+
+                                <div className="p-3 bg-stone-50 space-y-3">
+                                  {/* Videos de YouTube */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Videos YouTube ({(clase.videosClase || []).length})</p>
+                                      <button onClick={() => agregarVideoAClase(realIdx)}
+                                        className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-1 border border-stone-200 bg-white hover:bg-stone-50 text-stone-500 transition-colors">
+                                        <Plus size={10} /> Agregar
+                                      </button>
                                     </div>
-                                  ))}
+                                    {(clase.videosClase || []).length === 0
+                                      ? <p className="text-[9px] text-stone-300 font-bold">Sin videos</p>
+                                      : (clase.videosClase || []).map((v, vi) => (
+                                        <div key={vi} className="flex items-center gap-2 py-1.5 pl-1">
+                                          <Youtube size={12} style={{ color: COLOR.rojo }} />
+                                          <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{v.titulo}</span>
+                                          <button onClick={() => quitarVideoClase(realIdx, vi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+                                        </div>
+                                      ))}
+                                  </div>
+
+                                  {/* Archivos / PDFs del contenido de clase */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Archivos/PDFs ({(clase.archivosClase || []).length})</p>
+                                      <label className="flex items-center gap-1 cursor-pointer text-[9px] font-black uppercase tracking-wider px-2 py-1 border border-stone-200 bg-white hover:bg-stone-50 text-stone-500 transition-colors">
+                                        {subiendoMaterial ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} /> : <Upload size={10} />}
+                                        Subir
+                                        <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" onChange={e => subirArchivoClase(e, realIdx)} className="hidden" />
+                                      </label>
+                                    </div>
+                                    {(clase.archivosClase || []).length === 0
+                                      ? <p className="text-[9px] text-stone-300 font-bold">Sin archivos</p>
+                                      : (clase.archivosClase || []).map((a, ai) => (
+                                        <div key={ai} className="flex items-center gap-2 py-1.5 pl-1">
+                                          <FileText size={12} style={{ color: COLOR.naranja }} />
+                                          <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{a.nombre}</span>
+                                          <button onClick={() => quitarArchivoClase(realIdx, ai)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+                                        </div>
+                                      ))}
+                                  </div>
+
+                                  {/* Material extra (existente) */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Material extra ({(clase.materiales || []).length})</p>
+                                      <label className="flex items-center gap-1 cursor-pointer text-[9px] font-black uppercase tracking-wider px-2 py-1 border border-stone-200 bg-white hover:bg-stone-50 text-stone-500 transition-colors">
+                                        {subiendoMaterial ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} /> : <Upload size={10} />}
+                                        Subir
+                                        <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" onChange={e => subirMaterialClase(e, realIdx)} className="hidden" />
+                                      </label>
+                                    </div>
+                                    {(clase.materiales || []).length === 0
+                                      ? <p className="text-[9px] text-stone-300 font-bold">Sin material</p>
+                                      : (clase.materiales || []).map((mat, mi) => (
+                                        <div key={mi} className="flex items-center gap-2 py-1.5 pl-1">
+                                          <Paperclip size={12} className="text-stone-400" />
+                                          <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{mat.nombre}</span>
+                                          <button onClick={() => quitarMaterialClase(realIdx, mi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+                                        </div>
+                                      ))}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                       </div>
                     </div>
                   )}
 
-                  {/* Certificado */}
-                  {tab === "titulo" && (
-                    <div className="space-y-6">
-                      <div className="p-5 bg-stone-50 border border-stone-200">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-2">¿Qué es esto?</p>
-                        <p className="text-[12px] text-stone-500 leading-relaxed">Sube la plantilla del certificado que se entregará al completar el 100% del curso.</p>
-                      </div>
-                      {form.tituloFinal ? (
-                        <div className="border border-stone-200 p-6 text-center bg-white">
-                          <Award size={40} className="mx-auto mb-3" style={{ color: COLOR.naranja }} />
-                          <p className="text-[11px] font-black uppercase tracking-wider text-stone-500 mb-4">Certificado cargado</p>
-                          <div className="flex justify-center gap-2">
-                            <a href={form.tituloFinal} target="_blank" rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-wider px-4 py-2 border border-stone-200 hover:bg-stone-50 text-stone-600">
-                              <Eye size={13} /> Ver
-                            </a>
-                            <button onClick={() => setForm(p => ({ ...p, tituloFinal: "" }))}
-                              className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-wider px-4 py-2 border border-red-200 hover:bg-red-50 text-red-500">
-                              <Trash2 size={13} /> Quitar
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-stone-200 cursor-pointer hover:bg-stone-50 transition-all gap-3">
-                          {subiendo ? <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
-                            : <><Award size={36} className="text-stone-200" /><span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Subir certificado / título</span><span className="text-[9px] text-stone-300 font-bold">PDF, PNG, JPG</span></>}
-                          <input type="file" accept=".pdf,image/*" onChange={subirTitulo} className="hidden" />
-                        </label>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Matrículas en modal editar/crear */}
+                  {/* ── Tab Matrículas (con paginación y búsqueda) ── */}
                   {tab === "matriculas" && (
                     <div className="space-y-3">
                       {!editing && (
@@ -563,33 +953,59 @@ export default function AdminCursosPage() {
                           Guarda el curso primero para poder matricular estudiantes.
                         </div>
                       )}
+
+                      {/* Búsqueda */}
+                      <div className="relative">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                        <input type="text" placeholder="Buscar estudiante..." value={busqMatModal}
+                          onChange={e => setBusqMatModal(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 text-[11px] font-medium bg-white border border-stone-200 outline-none focus:border-red-400 transition-all" />
+                      </div>
+
                       <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">
-                        {(form.matriculados || []).length} matriculado{(form.matriculados || []).length !== 1 ? "s" : ""}
+                        {(form.matriculados || []).length} matriculado{(form.matriculados || []).length !== 1 ? "s" : ""} · {estFiltradosModal.length} resultado{estFiltradosModal.length !== 1 ? "s" : ""}
                       </p>
-                      {estudiantes.length === 0
-                        ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">No hay estudiantes registrados</p>
-                        : estudiantes.map(est => {
+
+                      {estFiltradosModal.length === 0
+                        ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">No hay estudiantes</p>
+                        : pagModal.slice.map(est => {
                           const mat = (form.matriculados || []).includes(est.id);
+                          const prog = progresoMap[est.id] || {};
+                          const completado = editing && prog[`completado_${editing.id}`];
+                          const codigo = editing && prog[`codigo_${editing.id}`];
                           return (
                             <div key={est.id} className="flex items-center justify-between p-3 bg-white border border-stone-200">
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-black"
-                                  style={{ backgroundColor: mat ? COLOR.rojo : "#d1d5db" }}>
-                                  {est.nombres?.[0]}{est.apellidos?.[0]}
+                                  style={{ backgroundColor: completado ? "#22c55e" : mat ? COLOR.rojo : "#d1d5db" }}>
+                                  {completado ? <CheckCircle size={13} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
                                 </div>
                                 <div>
                                   <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
-                                  <p className="text-[10px] text-stone-400">{est.email}</p>
+                                  {codigo
+                                    ? <p className="text-[10px] font-black tracking-wider" style={{ color: COLOR.naranja }}><Hash size={9} className="inline" />{codigo}</p>
+                                    : <p className="text-[10px] text-stone-400">{est.email}</p>}
                                 </div>
                               </div>
-                              <button onClick={() => toggleMatriculaEnForm(est.id)} disabled={!editing}
-                                className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-40 ${mat ? "text-red-500 border border-red-200 hover:bg-red-50" : "text-white"}`}
-                                style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
-                                {mat ? "Quitar" : "Matricular"}
-                              </button>
+                              <div className="flex gap-1.5">
+                                {mat && editing && !completado && (
+                                  <button onClick={() => marcarCompletadoAdmin(editing.id, est.id, `${est.nombres} ${est.apellidos}`)}
+                                    className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white flex items-center gap-1"
+                                    style={{ backgroundColor: "#22c55e" }}>
+                                    <CheckCircle size={10} />
+                                  </button>
+                                )}
+                                <button onClick={() => toggleMatriculaEnForm(est.id)} disabled={!editing}
+                                  className={`px-3 py-2 text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-40 ${mat ? "text-red-500 border border-red-200 hover:bg-red-50" : "text-white"}`}
+                                  style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
+                                  {mat ? "Quitar" : "Matricular"}
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
+
+                      <Pager {...pagModal} />
                     </div>
                   )}
                 </div>
@@ -610,7 +1026,9 @@ export default function AdminCursosPage() {
           )}
         </AnimatePresence>
 
-        {/* MODAL MATRÍCULAS RÁPIDO */}
+        {/* ═══════════════════════════════════════════════════════════════
+            MODAL MATRÍCULAS RÁPIDO (con paginación + búsqueda + marcar completado)
+        ═══════════════════════════════════════════════════════════════ */}
         <AnimatePresence>
           {showMatricula && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -623,6 +1041,7 @@ export default function AdminCursosPage() {
                   <div className="h-full w-1/4" style={{ backgroundColor: COLOR.naranja }} />
                   <div className="h-full w-1/4" style={{ backgroundColor: COLOR.marron }} />
                 </div>
+
                 <div className="flex items-center justify-between px-6 py-5 border-b border-stone-100 flex-shrink-0">
                   <div>
                     <div className="flex items-center gap-2">
@@ -631,37 +1050,64 @@ export default function AdminCursosPage() {
                         Matrículas — <span style={{ color: COLOR.rojo }}>{showMatricula.titulo}</span>
                       </h2>
                     </div>
-                    <p className="text-[10px] text-stone-400 font-bold mt-0.5">{matriculados.length} matriculados</p>
+                    <p className="text-[10px] text-stone-400 font-bold mt-0.5">{matriculados.length} matriculados · {estFiltradosRapido.length} resultado{estFiltradosRapido.length !== 1 ? "s" : ""}</p>
                   </div>
                   <button onClick={() => setShowMatricula(null)} className="text-stone-400 hover:text-slate-900"><X size={18} /></button>
                 </div>
-                <div className="overflow-y-auto flex-1 p-5 space-y-2">
-                  {estudiantes.length === 0
-                    ? <p className="text-center text-[11px] text-stone-300 font-bold py-12">No hay estudiantes registrados</p>
-                    : estudiantes.map(est => {
+
+                {/* Búsqueda */}
+                <div className="px-5 pt-4 pb-2 flex-shrink-0">
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                    <input type="text" placeholder="Buscar estudiante..." value={busqMatRapido}
+                      onChange={e => setBusqMatRapido(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 text-[11px] font-medium bg-stone-50 border border-stone-200 outline-none focus:border-red-400 transition-all" />
+                  </div>
+                </div>
+
+                <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-2">
+                  {estFiltradosRapido.length === 0
+                    ? <p className="text-center text-[11px] text-stone-300 font-bold py-12">No hay estudiantes</p>
+                    : pagRapido.slice.map(est => {
                       const mat = matriculados.includes(est.id);
+                      const prog = progresoMap[est.id] || {};
+                      const completado = prog[`completado_${showMatricula.id}`];
+                      const codigo = prog[`codigo_${showMatricula.id}`];
                       return (
                         <div key={est.id} className="flex items-center justify-between p-3 bg-white border border-stone-100 hover:border-stone-200 transition-colors">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[10px] font-black"
-                              style={{ backgroundColor: mat ? COLOR.rojo : "#e5e7eb" }}>
-                              {mat ? <CheckCircle size={15} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
+                              style={{ backgroundColor: completado ? "#22c55e" : mat ? COLOR.rojo : "#e5e7eb" }}>
+                              {completado ? <CheckCircle size={15} /> : mat ? `${est.nombres?.[0]}${est.apellidos?.[0]}` : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
                             </div>
                             <div>
                               <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
-                              <p className="text-[10px] text-stone-400">{est.email}</p>
+                              {codigo
+                                ? <p className="text-[9px] font-black tracking-wider" style={{ color: COLOR.naranja }}><Hash size={8} className="inline" />{codigo}</p>
+                                : <p className="text-[10px] text-stone-400">{est.email}</p>}
                             </div>
                           </div>
-                          {/* est.id === UID de Auth, así que la matrícula funcionará correctamente */}
-                          <button onClick={() => toggleMatricula(est.id)}
-                            className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${mat ? "border border-red-200 text-red-500 hover:bg-red-50" : "text-white"}`}
-                            style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
-                            {mat ? "Quitar" : "Matricular"}
-                          </button>
+                          <div className="flex gap-1.5">
+                            {mat && !completado && (
+                              <button onClick={() => marcarCompletadoAdmin(showMatricula.id, est.id, `${est.nombres} ${est.apellidos}`)}
+                                className="p-2 text-white flex items-center"
+                                style={{ backgroundColor: "#22c55e" }}
+                                title="Marcar como completado">
+                                <CheckCircle size={13} />
+                              </button>
+                            )}
+                            <button onClick={() => toggleMatricula(est.id)}
+                              className={`px-3 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${mat ? "border border-red-200 text-red-500 hover:bg-red-50" : "text-white"}`}
+                              style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
+                              {mat ? "Quitar" : "+"}
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
+                  <Pager {...pagRapido} />
                 </div>
+
                 <div className="flex-shrink-0 p-4 border-t border-stone-100">
                   <button onClick={() => setShowMatricula(null)}
                     className="w-full py-3 text-[10px] font-black uppercase tracking-widest text-white"

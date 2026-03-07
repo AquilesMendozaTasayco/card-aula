@@ -8,18 +8,13 @@ import { onAuthStateChanged } from "firebase/auth";
 import Swal from "sweetalert2";
 import {
   BookOpen, PlayCircle, FileText, Link as LinkIcon,
-  Award, CheckCircle, Clock, X, Download, ExternalLink,
-  ChevronRight, Lock, Youtube, File, Paperclip,
-  GraduationCap, BarChart3
+  CheckCircle, Clock, X, ExternalLink,
+  ChevronRight, Youtube, File, Paperclip,
+  GraduationCap, BarChart3, Hash, CalendarDays,
+  Copy, Download,
 } from "lucide-react";
-import { motion as m } from "framer-motion";
 
-const COLOR = {
-  rojo:    "#EF3340",
-  naranja: "#D65B2B",
-  marron:  "#8B4513",
-};
-
+const COLOR = { rojo: "#EF3340", naranja: "#D65B2B", marron: "#8B4513" };
 const ICON_TIPO = { video: Youtube, pdf: FileText, enlace: LinkIcon, archivo: File };
 
 function getYoutubeEmbed(url) {
@@ -28,14 +23,43 @@ function getYoutubeEmbed(url) {
   return match ? `https://www.youtube.com/embed/${match[1]}` : null;
 }
 
+function formatFechaClase(fecha, hora) {
+  if (!fecha) return null;
+  const d = new Date(`${fecha}T${hora || "00:00"}`);
+  return d.toLocaleString("es-PE", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+}
+
+// Tarjeta de código único
+function CodigoCard({ codigo, cursoTitulo }) {
+  const [copiado, setCopiado] = useState(false);
+  const copiar = () => {
+    navigator.clipboard.writeText(codigo);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  };
+  return (
+    <div className="border-2 border-yellow-300 bg-yellow-50 p-5 text-center">
+      <GraduationCap size={28} className="mx-auto mb-2" style={{ color: COLOR.naranja }} />
+      <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1">Código de Finalización</p>
+      <p className="text-xl font-black tracking-[0.25em] my-3" style={{ color: COLOR.rojo }}>{codigo}</p>
+      <p className="text-[10px] text-stone-400 mb-3">{cursoTitulo}</p>
+      <button onClick={copiar}
+        className="inline-flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-all"
+        style={{ backgroundColor: copiado ? "#22c55e" : COLOR.naranja }}>
+        {copiado ? <><CheckCircle size={12} /> Copiado</> : <><Copy size={12} /> Copiar código</>}
+      </button>
+    </div>
+  );
+}
+
 export default function EstudianteCursosPage() {
   const [uid, setUid]                   = useState(null);
   const [cursos, setCursos]             = useState([]);
   const [loading, setLoading]           = useState(true);
   const [cursoActivo, setCursoActivo]   = useState(null);
   const [contenidoActivo, setContenidoActivo] = useState(null);
-  const [progreso, setProgreso]         = useState({}); // { [cursoId]: [contenidoId, ...] }
-  const [tab, setTab]                   = useState("en_curso"); // "en_curso" | "finalizados"
+  const [progreso, setProgreso]         = useState({});
+  const [tab, setTab]                   = useState("en_curso");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -49,9 +73,6 @@ export default function EstudianteCursosPage() {
   const cargarCursos = async (userId) => {
     try {
       setLoading(true);
-      // Obtener cursos donde el estudiante está matriculado
-      // Asumimos que en Firestore los cursos tienen campo matriculados: [uid, uid, ...]
-      // y el progreso está en estudiantes/{uid}/progreso/{cursoId}
       const cursosSnap = await getDocs(query(
         collection(db, "cursos"),
         where("matriculados", "array-contains", userId)
@@ -59,11 +80,8 @@ export default function EstudianteCursosPage() {
       const cursosData = cursosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       setCursos(cursosData);
 
-      // Cargar progreso del estudiante
       const progSnap = await getDoc(doc(db, "estudiantes_progreso", userId));
-      if (progSnap.exists()) {
-        setProgreso(progSnap.data());
-      }
+      if (progSnap.exists()) setProgreso(progSnap.data());
     } catch (err) {
       console.error(err);
     } finally {
@@ -85,7 +103,6 @@ export default function EstudianteCursosPage() {
         updatedAt: serverTimestamp(),
       });
     } catch {
-      // Si el doc no existe, crearlo
       const { setDoc } = await import("firebase/firestore");
       await setDoc(doc(db, "estudiantes_progreso", uid), {
         [cursoId]: [contenidoId],
@@ -93,7 +110,7 @@ export default function EstudianteCursosPage() {
       }, { merge: true });
     }
 
-    // Verificar si completó todo el curso
+    // Verificar si completó todo el curso (solo si no fue marcado manualmente)
     const curso = cursos.find(c => c.id === cursoId);
     if (curso) {
       const totalContenidos = curso.contenidos?.length || 0;
@@ -101,18 +118,11 @@ export default function EstudianteCursosPage() {
       if (totalContenidos > 0 && completados >= totalContenidos) {
         Swal.fire({
           icon: "success",
-          title: "🎉 ¡Curso Completado!",
-          html: curso.tituloFinal
-            ? `<p class="text-sm text-gray-600">Has completado <strong>${curso.titulo}</strong>.<br>Tu certificado ya está disponible.</p>`
-            : `<p class="text-sm text-gray-600">Has completado <strong>${curso.titulo}</strong>.</p>`,
+          title: "🎉 ¡Has completado todos los contenidos!",
+          html: `<p class="text-sm text-gray-600">Cuando el administrador confirme tu finalización, recibirás tu código único.</p>`,
           confirmButtonColor: COLOR.rojo,
-          confirmButtonText: curso.tituloFinal ? "Ver Certificado" : "¡Genial!",
-          background: "#fff",
+          confirmButtonText: "¡Genial!",
           customClass: { popup: "rounded-2xl" },
-        }).then(r => {
-          if (r.isConfirmed && curso.tituloFinal) {
-            window.open(curso.tituloFinal, "_blank");
-          }
         });
       }
     }
@@ -125,9 +135,14 @@ export default function EstudianteCursosPage() {
     return Math.round((completados / total) * 100);
   };
 
-  const esFinalizado = (curso) => getPorcentaje(curso) === 100;
+  // Completado = marcado manualmente por el admin O 100% de contenidos
+  const esFinalizado = (curso) => {
+    return progreso[`completado_${curso.id}`] === true || getPorcentaje(curso) === 100;
+  };
 
-  const cursosEnCurso   = cursos.filter(c => !esFinalizado(c));
+  const getCodigo = (cursoId) => progreso[`codigo_${cursoId}`] || null;
+
+  const cursosEnCurso    = cursos.filter(c => !esFinalizado(c));
   const cursosFinalizados = cursos.filter(c => esFinalizado(c));
   const cursosVista = tab === "en_curso" ? cursosEnCurso : cursosFinalizados;
 
@@ -173,12 +188,12 @@ export default function EstudianteCursosPage() {
         {/* TABS */}
         <div className="flex gap-1 mb-8 border-b border-stone-200">
           {[
-            { id: "en_curso", label: `En Curso (${cursosEnCurso.length})`, icon: BarChart3 },
+            { id: "en_curso",    label: `En Curso (${cursosEnCurso.length})`,     icon: BarChart3 },
             { id: "finalizados", label: `Finalizados (${cursosFinalizados.length})`, icon: CheckCircle },
           ].map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex items-center gap-2 px-5 py-3 text-[11px] font-black uppercase tracking-widest transition-all border-b-2 ${
-                tab === id ? "border-b-2 text-white" : "border-transparent text-stone-400 hover:text-slate-700"
+                tab === id ? "" : "border-transparent text-stone-400 hover:text-slate-700"
               }`}
               style={tab === id ? { borderColor: COLOR.rojo, color: COLOR.rojo } : {}}>
               <Icon size={13} /> {label}
@@ -197,8 +212,9 @@ export default function EstudianteCursosPage() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {cursosVista.map((curso, idx) => {
-              const pct = getPorcentaje(curso);
+              const pct       = getPorcentaje(curso);
               const finalizado = esFinalizado(curso);
+              const codigo    = getCodigo(curso.id);
               return (
                 <motion.div key={curso.id} layout
                   initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
@@ -221,35 +237,33 @@ export default function EstudianteCursosPage() {
                         </div>
                       </div>
                     )}
-                    <div className="absolute top-2 left-2">
-                      <span className="bg-white/90 px-2 py-1 text-[9px] font-black uppercase tracking-tighter">
-                        {curso.nivel || "Sin nivel"}
-                      </span>
-                    </div>
-                    {finalizado && curso.tituloFinal && (
-                      <div className="absolute top-2 right-2 bg-yellow-400 p-1 rounded" title="Certificado disponible">
-                        <Award size={14} className="text-yellow-900" />
-                      </div>
-                    )}
                   </div>
 
                   <div className="p-5">
-                    <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: COLOR.naranja }}>
-                      {curso.categoria || "Sin categoría"}
-                    </p>
                     <h3 className="text-[13px] font-black text-slate-900 leading-tight mb-3 line-clamp-2">{curso.titulo}</h3>
 
+                    {/* Código de finalización si existe */}
+                    {finalizado && codigo && (
+                      <div className="mb-3 p-2.5 bg-yellow-50 border border-yellow-200 text-center"
+                        onClick={e => e.stopPropagation()}>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-1">Código</p>
+                        <p className="text-[13px] font-black tracking-[0.2em]" style={{ color: COLOR.rojo }}>{codigo}</p>
+                      </div>
+                    )}
+
                     {/* Barra progreso */}
-                    <div className="mb-3">
-                      <div className="flex justify-between text-[9px] font-black uppercase tracking-wider mb-1.5">
-                        <span className="text-stone-400">Progreso</span>
-                        <span style={{ color: finalizado ? "#22c55e" : COLOR.rojo }}>{pct}%</span>
+                    {!finalizado && (
+                      <div className="mb-3">
+                        <div className="flex justify-between text-[9px] font-black uppercase tracking-wider mb-1.5">
+                          <span className="text-stone-400">Progreso</span>
+                          <span style={{ color: COLOR.rojo }}>{pct}%</span>
+                        </div>
+                        <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, backgroundColor: COLOR.rojo }} />
+                        </div>
                       </div>
-                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${pct}%`, backgroundColor: finalizado ? "#22c55e" : COLOR.rojo }} />
-                      </div>
-                    </div>
+                    )}
 
                     <div className="flex items-center justify-between text-[10px] text-stone-400 font-bold">
                       <span className="flex items-center gap-1"><PlayCircle size={11} />
@@ -263,7 +277,7 @@ export default function EstudianteCursosPage() {
                     <button
                       className="w-full flex items-center justify-center gap-2 py-3 text-[10px] font-black uppercase tracking-wider text-white transition-all"
                       style={{ backgroundColor: finalizado ? "#22c55e" : COLOR.rojo }}>
-                      {finalizado ? <><CheckCircle size={13} /> Ver Certificado</> : <><PlayCircle size={13} /> Continuar</>}
+                      {finalizado ? <><GraduationCap size={13} /> Ver Detalle</> : <><PlayCircle size={13} /> Continuar</>}
                       <ChevronRight size={13} />
                     </button>
                   </div>
@@ -273,7 +287,9 @@ export default function EstudianteCursosPage() {
           </div>
         )}
 
-        {/* MODAL DETALLE CURSO */}
+        {/* ═══════════════════════════════════════════════════════════════
+            MODAL DETALLE CURSO (panel lateral)
+        ═══════════════════════════════════════════════════════════════ */}
         <AnimatePresence>
           {cursoActivo && (
             <div className="fixed inset-0 z-[100] flex">
@@ -297,7 +313,6 @@ export default function EstudianteCursosPage() {
                       <img src={cursoActivo.portadaUrl} className="h-full w-full object-cover opacity-50" alt="" />
                     )}
                     <div className="absolute inset-0 p-6 flex flex-col justify-end">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">{cursoActivo.categoria}</p>
                       <h2 className="text-xl font-black text-white leading-tight">{cursoActivo.titulo}</h2>
                     </div>
                     <button onClick={() => setCursoActivo(null)}
@@ -306,28 +321,116 @@ export default function EstudianteCursosPage() {
                     </button>
                   </div>
 
-                  {/* Progreso del curso */}
+                  {cursoActivo.descripcion && (
+                    <div className="px-6 py-4 border-b border-stone-100 bg-white">
+                      <p className="text-[11px] text-stone-500 leading-relaxed">{cursoActivo.descripcion}</p>
+                    </div>
+                  )}
+
+                  {/* Progreso */}
                   <div className="px-6 py-4 bg-stone-50 border-b border-stone-100">
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-wider mb-2">
-                      <span className="text-stone-400">Tu progreso</span>
-                      <span style={{ color: esFinalizado(cursoActivo) ? "#22c55e" : COLOR.rojo }}>
-                        {getPorcentaje(cursoActivo)}% completado
-                      </span>
-                    </div>
-                    <div className="h-2 bg-stone-200 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${getPorcentaje(cursoActivo)}%`, backgroundColor: esFinalizado(cursoActivo) ? "#22c55e" : COLOR.rojo }} />
-                    </div>
+                    {esFinalizado(cursoActivo) ? (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle size={16} className="text-green-500" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-green-600">Curso Finalizado</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-[10px] font-black uppercase tracking-wider mb-2">
+                          <span className="text-stone-400">Tu progreso</span>
+                          <span style={{ color: COLOR.rojo }}>{getPorcentaje(cursoActivo)}% completado</span>
+                        </div>
+                        <div className="h-2 bg-stone-200 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${getPorcentaje(cursoActivo)}%`, backgroundColor: COLOR.rojo }} />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Contenidos */}
                 <div className="flex-1 overflow-y-auto">
+
+                  {/* Código de finalización */}
+                  {esFinalizado(cursoActivo) && getCodigo(cursoActivo.id) && (
+                    <div className="p-6 pb-0">
+                      <CodigoCard codigo={getCodigo(cursoActivo.id)} cursoTitulo={cursoActivo.titulo} />
+                    </div>
+                  )}
+
+                  {/* Clases programadas */}
+                  {(cursoActivo.clases || []).length > 0 && (
+                    <div className="p-6 pb-0">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">Clases Programadas</p>
+                      <div className="space-y-2">
+                        {[...(cursoActivo.clases || [])].sort((a, b) => {
+                          const da = a.fecha ? new Date(`${a.fecha}T${a.hora || "00:00"}`) : new Date(0);
+                          const db_ = b.fecha ? new Date(`${b.fecha}T${b.hora || "00:00"}`) : new Date(0);
+                          return da - db_;
+                        }).map((clase, i) => (
+                          <div key={clase.id || i} className="p-3 bg-stone-50 border border-stone-100">
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
+                                style={{ backgroundColor: COLOR.naranja }}>{i + 1}</div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-black text-slate-900">{clase.titulo}</p>
+                                {clase.fecha && (
+                                  <p className="text-[10px] text-stone-400 font-bold mt-0.5 capitalize flex items-center gap-1">
+                                    <CalendarDays size={10} /> {formatFechaClase(clase.fecha, clase.hora)}
+                                  </p>
+                                )}
+                                {clase.descripcion && <p className="text-[11px] text-stone-500 mt-1">{clase.descripcion}</p>}
+
+                                {/* Videos de la clase */}
+                                {(clase.videosClase || []).length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    {clase.videosClase.map((v, vi) => (
+                                      <a key={vi} href={v.url} target="_blank" rel="noreferrer"
+                                        className="flex items-center gap-1.5 text-[10px] font-bold hover:underline"
+                                        style={{ color: COLOR.rojo }}>
+                                        <Youtube size={11} /> {v.titulo}
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Archivos de la clase */}
+                                {(clase.archivosClase || []).length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    {clase.archivosClase.map((a, ai) => (
+                                      <a key={ai} href={a.url} target="_blank" rel="noreferrer"
+                                        className="flex items-center gap-1.5 text-[10px] font-bold hover:underline"
+                                        style={{ color: COLOR.naranja }}>
+                                        <FileText size={11} /> {a.nombre}
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Material extra */}
+                                {(clase.materiales || []).length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    {clase.materiales.map((m, mi) => (
+                                      <a key={mi} href={m.url} target="_blank" rel="noreferrer"
+                                        className="flex items-center gap-1.5 text-[10px] font-bold text-stone-500 hover:underline">
+                                        <Paperclip size={11} /> {m.nombre}
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Reproductor/Visor activo */}
                   <AnimatePresence>
                     {contenidoActivo && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }} className="border-b border-stone-200">
+                        exit={{ opacity: 0, height: 0 }} className="border-b border-stone-200 mx-6 mt-6">
                         {contenidoActivo.tipo === "video" && getYoutubeEmbed(contenidoActivo.url) ? (
                           <div className="aspect-video w-full bg-black">
                             <iframe src={getYoutubeEmbed(contenidoActivo.url)} className="w-full h-full"
@@ -371,9 +474,7 @@ export default function EstudianteCursosPage() {
 
                   {/* Lista contenidos */}
                   <div className="p-6 space-y-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-4">
-                      Contenido del Curso
-                    </p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-4">Contenido del Curso</p>
                     {(cursoActivo.contenidos || []).length === 0 ? (
                       <p className="text-center text-[11px] text-stone-300 font-bold py-8">Sin contenidos disponibles</p>
                     ) : (cursoActivo.contenidos || []).map((c, i) => {
@@ -384,14 +485,12 @@ export default function EstudianteCursosPage() {
                         <motion.div key={c.id || i} whileHover={{ x: 2 }}
                           onClick={() => setContenidoActivo(activo ? null : c)}
                           className={`flex items-center gap-3 p-3 border cursor-pointer transition-all ${
-                            activo ? "border-red-200 bg-red-50" :
+                            activo    ? "border-red-200 bg-red-50" :
                             completado ? "border-green-100 bg-green-50" :
                             "border-stone-100 hover:border-stone-200 bg-white"
                           }`}>
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                            completado ? "bg-green-500" : activo ? "" : "bg-stone-100"
-                          }`}
-                          style={activo && !completado ? { backgroundColor: COLOR.rojo } : {}}>
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${completado ? "bg-green-500" : activo ? "" : "bg-stone-100"}`}
+                            style={activo && !completado ? { backgroundColor: COLOR.rojo } : {}}>
                             {completado ? <CheckCircle size={14} className="text-white" /> : <Icon size={14} className={activo ? "text-white" : "text-stone-400"} />}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -405,24 +504,6 @@ export default function EstudianteCursosPage() {
                       );
                     })}
                   </div>
-
-                  {/* Certificado si está disponible */}
-                  {esFinalizado(cursoActivo) && cursoActivo.tituloFinal && (
-                    <div className="mx-6 mb-6 p-5 border-2 border-yellow-200 bg-yellow-50">
-                      <div className="flex items-center gap-3 mb-3">
-                        <GraduationCap size={24} style={{ color: COLOR.naranja }} />
-                        <div>
-                          <p className="text-[11px] font-black uppercase tracking-wider text-slate-900">¡Certificado Disponible!</p>
-                          <p className="text-[10px] text-stone-500">Has completado este curso</p>
-                        </div>
-                      </div>
-                      <a href={cursoActivo.tituloFinal} target="_blank" rel="noreferrer"
-                        className="flex items-center justify-center gap-2 w-full py-3 text-[10px] font-black uppercase tracking-wider text-white"
-                        style={{ backgroundColor: COLOR.naranja }}>
-                        <Award size={14} /> Descargar Certificado
-                      </a>
-                    </div>
-                  )}
                 </div>
               </motion.div>
             </div>
