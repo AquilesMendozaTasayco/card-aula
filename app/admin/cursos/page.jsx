@@ -19,7 +19,7 @@ import {
 const COLOR = { rojo: "#EF3340", naranja: "#D65B2B", marron: "#8B4513" };
 
 const CURSO_VACIO     = { titulo: "", descripcion: "", portadaUrl: "", activo: true, contenidos: [], clases: [], tituloFinal: "" };
-const CONTENIDO_VACIO = { tipo: "video", titulo: "", url: "" };
+const CONTENIDO_VACIO = { tipo: "video", titulo: "", url: "", adjuntos: [] };
 const CLASE_VACIA     = { titulo: "", descripcion: "", materiales: [] };
 const ICON_TIPO       = { video: Youtube, pdf: FileText, enlace: LinkIcon, archivo: File };
 
@@ -36,6 +36,7 @@ export default function AdminCursosPage() {
   const [subiendo, setSubiendo]           = useState(false);
   const [subiendoPortada, setSubiendoPortada] = useState(false);
   const [subiendoMaterial, setSubiendoMaterial] = useState(false);
+  const [subiendoAdjunto, setSubiendoAdjunto] = useState(false);
   const [busqueda, setBusqueda]           = useState("");
   const [tab, setTab]                     = useState("info");
   const [matriculados, setMatriculados]   = useState([]);
@@ -47,7 +48,6 @@ export default function AdminCursosPage() {
       setLoading(true);
       const [cSnap, eSnap] = await Promise.all([
         getDocs(query(collection(db, "cursos"), orderBy("createdAt", "desc"))),
-        // ⚠️ Cargamos desde "estudiantes" — el doc ID === UID de Auth
         getDocs(query(collection(db, "estudiantes"), orderBy("apellidos", "asc"))),
       ]);
       setCursos(cSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -117,9 +117,86 @@ export default function AdminCursosPage() {
     finally { setSubiendoMaterial(false); }
   };
 
+  // ── Subir múltiples adjuntos al nuevo contenido ──────────────────────────
+  const subirAdjuntosContenido = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    try {
+      setSubiendoAdjunto(true);
+      const nuevosAdjuntos = await Promise.all(
+        files.map(async (file) => {
+          const r = ref(storage, `cursos/adjuntos/${Date.now()}_${file.name}`);
+          await uploadBytes(r, file);
+          const url = await getDownloadURL(r);
+          return { id: Date.now().toString() + Math.random(), nombre: file.name, url, titulo: "", tipo: file.type.includes("pdf") ? "pdf" : "archivo" };
+        })
+      );
+      setNuevoContenido(p => ({ ...p, adjuntos: [...(p.adjuntos || []), ...nuevosAdjuntos] }));
+      Swal.fire({ icon: "success", title: `${files.length} archivo${files.length > 1 ? "s" : ""} subido${files.length > 1 ? "s" : ""}`, timer: 1000, showConfirmButton: false });
+    } catch { Swal.fire({ icon: "error", title: "Error al subir adjunto", confirmButtonColor: COLOR.rojo }); }
+    finally { setSubiendoAdjunto(false); e.target.value = ""; }
+  };
+
+  const actualizarTituloAdjunto = (adjId, titulo) => {
+    setNuevoContenido(p => ({
+      ...p,
+      adjuntos: (p.adjuntos || []).map(a => a.id === adjId ? { ...a, titulo } : a)
+    }));
+  };
+
+  const quitarAdjuntoNuevo = (adjId) => {
+    setNuevoContenido(p => ({ ...p, adjuntos: (p.adjuntos || []).filter(a => a.id !== adjId) }));
+  };
+
+  // ── Adjuntos sobre contenidos ya guardados en form ───────────────────────
+  const subirAdjuntoContenidoExistente = async (e, contId) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    try {
+      setSubiendoAdjunto(true);
+      const nuevosAdjuntos = await Promise.all(
+        files.map(async (file) => {
+          const r = ref(storage, `cursos/adjuntos/${Date.now()}_${file.name}`);
+          await uploadBytes(r, file);
+          const url = await getDownloadURL(r);
+          return { id: Date.now().toString() + Math.random(), nombre: file.name, url, titulo: "", tipo: file.type.includes("pdf") ? "pdf" : "archivo" };
+        })
+      );
+      setForm(p => ({
+        ...p,
+        contenidos: (p.contenidos || []).map(c =>
+          c.id === contId ? { ...c, adjuntos: [...(c.adjuntos || []), ...nuevosAdjuntos] } : c
+        )
+      }));
+      Swal.fire({ icon: "success", title: `${files.length} archivo${files.length > 1 ? "s" : ""} subido${files.length > 1 ? "s" : ""}`, timer: 1000, showConfirmButton: false });
+    } catch { Swal.fire({ icon: "error", title: "Error al subir adjunto", confirmButtonColor: COLOR.rojo }); }
+    finally { setSubiendoAdjunto(false); e.target.value = ""; }
+  };
+
+  const actualizarTituloAdjuntoExistente = (contId, adjId, titulo) => {
+    setForm(p => ({
+      ...p,
+      contenidos: (p.contenidos || []).map(c =>
+        c.id === contId
+          ? { ...c, adjuntos: (c.adjuntos || []).map(a => a.id === adjId ? { ...a, titulo } : a) }
+          : c
+      )
+    }));
+  };
+
+  const quitarAdjuntoExistente = (contId, adjId) => {
+    setForm(p => ({
+      ...p,
+      contenidos: (p.contenidos || []).map(c =>
+        c.id === contId ? { ...c, adjuntos: (c.adjuntos || []).filter(a => a.id !== adjId) } : c
+      )
+    }));
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
   const agregarContenido = () => {
-    if (!nuevoContenido.titulo || !nuevoContenido.url) {
-      Swal.fire({ icon: "warning", title: "Completa título y URL", confirmButtonColor: COLOR.rojo }); return;
+    if (!nuevoContenido.titulo || (!nuevoContenido.url && (nuevoContenido.adjuntos || []).length === 0)) {
+      Swal.fire({ icon: "warning", title: "Completa el título y agrega una URL o al menos un archivo", confirmButtonColor: COLOR.rojo }); return;
     }
     setForm(p => ({ ...p, contenidos: [...(p.contenidos || []), { ...nuevoContenido, id: Date.now().toString() }] }));
     setNuevoContenido(CONTENIDO_VACIO);
@@ -175,7 +252,6 @@ export default function AdminCursosPage() {
     } catch { Swal.fire({ icon: "error", title: "Error al eliminar", confirmButtonColor: COLOR.rojo }); }
   };
 
-  // ── Matrícula — usa est.id que ahora === UID de Auth ─────────────────────
   const abrirMatricula = (curso) => { setShowMatricula(curso); setMatriculados(curso.matriculados || []); };
 
   const toggleMatricula = async (estId) => {
@@ -393,9 +469,10 @@ export default function AdminCursosPage() {
                     </div>
                   )}
 
-                  {/* Contenido */}
+                  {/* ── Contenido ── */}
                   {tab === "contenido" && (
                     <div className="space-y-6">
+                      {/* Formulario nuevo contenido */}
                       <div className="p-5 bg-stone-50 border border-stone-200 space-y-4">
                         <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Agregar recurso</p>
                         <div className="grid grid-cols-2 gap-4">
@@ -420,10 +497,12 @@ export default function AdminCursosPage() {
                               className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
                           </div>
                         </div>
+
+                        {/* URL o PDF principal */}
                         {nuevoContenido.tipo === "pdf" ? (
                           <label className="flex items-center gap-3 p-3 border border-dashed border-stone-300 cursor-pointer hover:bg-white transition-all">
                             {subiendo ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} /> : <Upload size={16} className="text-stone-400" />}
-                            <span className="text-[10px] font-black uppercase tracking-wider text-stone-500">{nuevoContenido.url ? "✅ PDF cargado" : "Subir PDF"}</span>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-stone-500">{nuevoContenido.url ? "✅ PDF cargado" : "Subir PDF principal"}</span>
                             <input type="file" accept=".pdf" onChange={subirPDF} className="hidden" />
                           </label>
                         ) : (
@@ -435,25 +514,95 @@ export default function AdminCursosPage() {
                               className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
                           </div>
                         )}
+
+                        {/* ── Adjuntos del nuevo contenido ── */}
+                        <div className="border-t border-stone-200 pt-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">
+                              Archivos adjuntos ({(nuevoContenido.adjuntos || []).length}) — opcional
+                            </p>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-[9px] font-black uppercase tracking-wider px-3 py-1.5 border border-stone-200 bg-white hover:bg-stone-50 transition-colors text-stone-500">
+                              {subiendoAdjunto
+                                ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
+                                : <Paperclip size={11} />}
+                              Adjuntar archivos
+                              <input type="file" multiple accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,image/*,video/*" onChange={subirAdjuntosContenido} className="hidden" />
+                            </label>
+                          </div>
+                          {(nuevoContenido.adjuntos || []).length === 0
+                            ? <p className="text-[9px] text-stone-300 font-bold">Sin adjuntos aún</p>
+                            : (nuevoContenido.adjuntos || []).map(adj => (
+                              <div key={adj.id} className="flex items-center gap-2 bg-white border border-stone-100 p-2 rounded">
+                                <FileText size={13} style={{ color: COLOR.naranja }} className="flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] text-stone-400 truncate mb-1">{adj.nombre}</p>
+                                  <input
+                                    value={adj.titulo}
+                                    onChange={e => actualizarTituloAdjunto(adj.id, e.target.value)}
+                                    placeholder="Título opcional..."
+                                    className="w-full border-b border-stone-200 bg-transparent py-0.5 text-[11px] font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
+                                </div>
+                                <button onClick={() => quitarAdjuntoNuevo(adj.id)} className="p-1 hover:text-red-500 text-stone-300 flex-shrink-0"><X size={12} /></button>
+                              </div>
+                            ))}
+                        </div>
+
                         <button onClick={agregarContenido}
                           className="flex items-center gap-2 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-white"
                           style={{ backgroundColor: COLOR.rojo }}>
                           <Plus size={13} /> Agregar
                         </button>
                       </div>
+
+                      {/* Lista de contenidos ya agregados */}
                       <div className="space-y-2">
                         {(form.contenidos || []).length === 0
                           ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">Sin recursos agregados</p>
                           : (form.contenidos || []).map((c, i) => {
                             const Icon = ICON_TIPO[c.tipo] || Paperclip;
                             return (
-                              <div key={c.id || i} className="flex items-center gap-3 p-3 bg-white border border-stone-200">
-                                <Icon size={15} style={{ color: COLOR.naranja }} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[12px] font-black text-slate-900 truncate">{c.titulo}</p>
-                                  <p className="text-[9px] text-stone-400 uppercase font-bold">{c.tipo}</p>
+                              <div key={c.id || i} className="bg-white border border-stone-200 overflow-hidden">
+                                {/* Cabecera del contenido */}
+                                <div className="flex items-center gap-3 p-3">
+                                  <Icon size={15} style={{ color: COLOR.naranja }} />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[12px] font-black text-slate-900 truncate">{c.titulo}</p>
+                                    <p className="text-[9px] text-stone-400 uppercase font-bold">{c.tipo}</p>
+                                  </div>
+                                  <button onClick={() => quitarContenido(c.id)} className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 transition-colors rounded"><X size={13} /></button>
                                 </div>
-                                <button onClick={() => quitarContenido(c.id)} className="p-1.5 hover:bg-red-50 text-stone-300 hover:text-red-500 transition-colors rounded"><X size={13} /></button>
+
+                                {/* Adjuntos del contenido existente */}
+                                <div className="px-3 pb-3 bg-stone-50 border-t border-stone-100 pt-2 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">
+                                      Adjuntos ({(c.adjuntos || []).length})
+                                    </p>
+                                    <label className="flex items-center gap-1 cursor-pointer text-[9px] font-black uppercase tracking-wider px-2.5 py-1 border border-stone-200 bg-white hover:bg-stone-100 transition-colors text-stone-500">
+                                      {subiendoAdjunto
+                                        ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
+                                        : <Paperclip size={10} />}
+                                      Adjuntar
+                                      <input type="file" multiple accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,image/*,video/*" onChange={e => subirAdjuntoContenidoExistente(e, c.id)} className="hidden" />
+                                    </label>
+                                  </div>
+                                  {(c.adjuntos || []).length === 0
+                                    ? <p className="text-[9px] text-stone-300 font-bold">Sin adjuntos</p>
+                                    : (c.adjuntos || []).map(adj => (
+                                      <div key={adj.id} className="flex items-center gap-2 bg-white border border-stone-100 p-2 rounded">
+                                        <FileText size={12} style={{ color: COLOR.naranja }} className="flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[9px] text-stone-400 truncate mb-0.5">{adj.nombre}</p>
+                                          <input
+                                            value={adj.titulo}
+                                            onChange={e => actualizarTituloAdjuntoExistente(c.id, adj.id, e.target.value)}
+                                            placeholder="Título opcional..."
+                                            className="w-full border-b border-stone-200 bg-transparent py-0.5 text-[11px] font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
+                                        </div>
+                                        <button onClick={() => quitarAdjuntoExistente(c.id, adj.id)} className="p-1 hover:text-red-500 text-stone-300 flex-shrink-0"><X size={11} /></button>
+                                      </div>
+                                    ))}
+                                </div>
                               </div>
                             );
                           })}
@@ -652,7 +801,6 @@ export default function AdminCursosPage() {
                               <p className="text-[10px] text-stone-400">{est.email}</p>
                             </div>
                           </div>
-                          {/* est.id === UID de Auth, así que la matrícula funcionará correctamente */}
                           <button onClick={() => toggleMatricula(est.id)}
                             className={`px-4 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${mat ? "border border-red-200 text-red-500 hover:bg-red-50" : "text-white"}`}
                             style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
