@@ -154,18 +154,26 @@ export default function Sidebar() {
       className="sticky top-0 h-screen w-[280px] flex-shrink-0 flex flex-col z-50 shadow-2xl border-r border-white/5"
       style={{ backgroundColor: COLOR.fondo }}
     >
-      {/* HEADER */}
-      <div className="p-8 relative overflow-hidden">
+      {/* HEADER - Logo más grande y centrado */}
+      <div className="p-8 pb-6 relative overflow-hidden flex flex-col items-center">
         <div
           className="absolute top-0 right-0 w-24 h-24 opacity-10 pointer-events-none translate-x-10 -translate-y-10 rotate-45"
           style={{ backgroundColor: accentColor }}
         />
-        <div className="relative w-full h-[50px] mb-4 brightness-0 invert">
-          <Image src="/logo.png" alt="Logo" fill sizes="240px" className="object-contain object-left" priority />
+        {/* Aumentado de h-[50px] a h-[85px] y centrado */}
+        <div className="relative w-full h-[85px] mb-4">
+          <Image 
+            src="/logo-11.png" 
+            alt="Logo" 
+            fill 
+            sizes="280px" 
+            className="object-contain object-center" 
+            priority 
+          />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 items-center">
           <div className="h-[3px] w-12" style={{ backgroundColor: accentColor }} />
-          <p className="text-[11px] font-black uppercase tracking-[0.3em] text-white">
+          <p className="text-[11px] font-black uppercase tracking-[0.3em] text-white text-center">
             Aula <span style={{ color: accentColor }}>{subtitulo.split(" ")[1]}</span>
           </p>
         </div>

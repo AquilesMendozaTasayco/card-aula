@@ -5,7 +5,7 @@ import Navbar from "@/components/layouts/Navbar";
 import Footer from "@/components/layouts/Footer";
 
 // Rutas donde NO se muestra Navbar ni Footer
-const RUTAS_SIN_LAYOUT = ["/admin", "/estudiante", "/login"];
+const RUTAS_SIN_LAYOUT = ["/admin", "/estudiante", "/login", "/certificado"];
 
 export default function LayoutWrapper({ children }) {
   const pathname = usePathname();

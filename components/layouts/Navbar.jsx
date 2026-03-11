@@ -64,13 +64,13 @@ export default function NavbarTransparente() {
         
         {/* ⬜ Logo */}
         <Link href="/" className="flex items-center group">
-          <div className="relative w-[135px] h-[42px] transition-transform group-hover:scale-105">
+          <div className="relative w-[190px] h-[80px] transition-transform group-hover:scale-105">
             <Image
-              src="/logo.png"
+              src="/logo-11.png"
               alt="Logo"
               fill
               priority
-              className="object-contain brightness-0 invert" 
+              className="object-contain" 
             />
           </div>
         </Link>
