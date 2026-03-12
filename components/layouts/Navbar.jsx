@@ -4,14 +4,12 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { FaFacebookF, FaTiktok, FaYoutube } from "react-icons/fa";
-import { HiMenuAlt3, HiX, HiChevronDown } from "react-icons/hi";
+import { HiMenuAlt3, HiX } from "react-icons/hi";
 import { 
   Home, 
   Info, 
   Mail, 
   LogIn, 
-  ChevronRight, 
-  ShieldCheck, 
   GraduationCap 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,15 +17,8 @@ import { motion, AnimatePresence } from "framer-motion";
 const NAV_LINKS = [
   { name: "INICIO", href: "/", icon: Home },
   { name: "NOSOTROS", href: "/nosotros", icon: Info },
-  // { name: "ADMISIÓN", href: "/admision", icon: ShieldCheck },
-  { name: "CONTACTO", href: "/contacto", icon: Mail },
-];
-
-const CURSOS_DROPDOWN = [
-  { name: "Seguridad Industrial", href: "/cursos/seguridad-industrial" },
-  { name: "Gestión de Proyectos", href: "/cursos/gestion-proyectos" },
-  { name: "Maquinaria Pesada", href: "/cursos/maquinaria-pesada" },
-  { name: "Salud Ocupacional", href: "/cursos/salud-ocupacional" },
+  { name: "CURSOS", href: "/cursos", icon: GraduationCap }, // Ahora es un link directo
+  { name: "CONTACTO", href: "/contacto", icon: Mail },      // Movido al final
 ];
 
 const SOCIAL_LINKS = [
@@ -87,33 +78,6 @@ export default function NavbarTransparente() {
               <span className="absolute bottom-0 left-0 w-full h-[2px] bg-white scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left" />
             </Link>
           ))}
-
-          {/* 🎓 Dropdown Cursos */}
-          <div className="relative group cursor-pointer">
-            <div className={`flex items-center gap-2 transition-all tracking-[0.15em] text-[11px] font-black py-2 ${
-              isScrolled ? "text-white/80 hover:text-white" : "text-white"
-            }`}>
-              <GraduationCap size={16} className="opacity-70 group-hover:opacity-100" />
-              <span>CURSOS</span>
-              <HiChevronDown className="group-hover:rotate-180 transition-transform duration-300" />
-            </div>
-
-            {/* Submenú Flotante */}
-            <div className="absolute left-0 mt-2 w-64 bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform translate-y-4 group-hover:translate-y-0 overflow-hidden">
-              <div className="py-2">
-                {CURSOS_DROPDOWN.map((curso) => (
-                  <Link
-                    key={curso.href}
-                    href={curso.href}
-                    className="flex items-center justify-between px-6 py-4 text-stone-700 hover:bg-stone-50 hover:text-[#8B0000] transition-all border-l-4 border-transparent hover:border-[#8B0000] text-[10px] font-black tracking-widest"
-                  >
-                    {curso.name}
-                    <ChevronRight size={14} className="opacity-30" />
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* 🌐 Lado Derecho: Redes + Login */}
@@ -164,7 +128,7 @@ export default function NavbarTransparente() {
                   <Link 
                     key={link.href} 
                     href={link.href} 
-                    className="flex items-center gap-4 text-white text-lg font-black"
+                    className="flex items-center gap-4 text-white text-lg font-black uppercase tracking-widest"
                     onClick={() => setIsOpen(false)}
                   >
                     <link.icon size={22} className="opacity-50" />

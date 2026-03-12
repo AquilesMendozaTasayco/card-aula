@@ -23,7 +23,7 @@ export default function FooterCARD() {
           <div className="space-y-10">
             <div className="flex items-center">
               {/* Logo en blanco para resaltar sobre el fondo rojo */}
-              <img src="/logo1.png" alt="CARD Logo" className="h-14 brightness-0 invert" />
+              <img src="/logo-11.png" alt="CARD Logo" className="h-20" />
             </div>
             <p className="text-white/80 text-[11px] leading-relaxed max-w-xs font-medium uppercase tracking-wider">
               Centro de Alto Rendimiento Docente. <br />

@@ -6,14 +6,13 @@ import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc, collection, query, orderBy, getDocs } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { GraduationCap, Mail, Lock, ChevronRight, CheckCircle, Loader2, UserPlus } from "lucide-react";
+import { GraduationCap, Mail, Lock, ChevronRight, CheckCircle, Loader2, UserPlus, Award } from "lucide-react";
 import { motion } from "framer-motion";
 import Swal from "sweetalert2";
 
 const COLOR_ROJO    = "#8B0000";
 const COLOR_NARANJA = "#D65B2B";
 
-// ── Textos fijos — nunca cambian ──────────────────────────────────────────────
 const SLIDES_TEXTO = [
   {
     lema:      "LIDERAZGO EN FORMACIÓN DOCENTE",
@@ -38,17 +37,14 @@ const SLIDES_TEXTO = [
 export default function HeroCentroDocente() {
   const router = useRouter();
 
-  // Solo las imágenes vienen de Firestore
   const [imagenes, setImagenes]   = useState([]);
   const [index, setIndex]         = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // Login
   const [email, setEmail]         = useState("");
   const [password, setPassword]   = useState("");
   const [logging, setLogging]     = useState(false);
 
-  // ── Cargar SOLO las imágenes de Firestore ─────────────────────────────────
   useEffect(() => {
     const cargar = async () => {
       try {
@@ -66,7 +62,6 @@ export default function HeroCentroDocente() {
     cargar();
   }, []);
 
-  // ── Auto-slide ────────────────────────────────────────────────────────────
   const nextSlide = useCallback(() => {
     if (isAnimating || SLIDES_TEXTO.length === 0) return;
     setIsAnimating(true);
@@ -79,7 +74,6 @@ export default function HeroCentroDocente() {
     return () => clearInterval(interval);
   }, [nextSlide]);
 
-  // ── Login funcional ───────────────────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
     setLogging(true);
@@ -89,10 +83,12 @@ export default function HeroCentroDocente() {
 
       if (!snap.exists()) {
         await auth.signOut();
-        Swal.fire({ icon: "error", title: "Acceso denegado",
+        Swal.fire({ 
+          icon: "error", title: "Acceso denegado",
           text: "No se encontró un perfil asociado a esta cuenta.",
           confirmButtonColor: COLOR_ROJO, background: "#fff",
-          customClass: { popup: "rounded-2xl" } });
+          customClass: { popup: "rounded-2xl" } 
+        });
         return;
       }
 
@@ -109,21 +105,10 @@ export default function HeroCentroDocente() {
           text: "Accediendo a tu aula...", timer: 1400, showConfirmButton: false,
           timerProgressBar: true, background: "#fff", customClass: { popup: "rounded-2xl" } });
         router.push("/estudiante/dashboard");
-      } else {
-        Swal.fire({ icon: "warning", title: "Rol no reconocido",
-          confirmButtonColor: COLOR_ROJO, background: "#fff",
-          customClass: { popup: "rounded-2xl" } });
       }
     } catch (err) {
-      const msgs = {
-        "auth/user-not-found":     "No existe una cuenta con este correo.",
-        "auth/wrong-password":     "Contraseña incorrecta.",
-        "auth/too-many-requests":  "Demasiados intentos. Espera un momento.",
-        "auth/invalid-email":      "Formato de correo no válido.",
-        "auth/invalid-credential": "Credenciales incorrectas.",
-      };
       Swal.fire({ icon: "error", title: "Error de acceso",
-        text: msgs[err.code] || "Ocurrió un error inesperado.",
+        text: "Credenciales incorrectas o error de conexión.",
         confirmButtonColor: COLOR_ROJO, background: "#fff",
         customClass: { popup: "rounded-2xl" } });
     } finally {
@@ -131,14 +116,13 @@ export default function HeroCentroDocente() {
     }
   };
 
-  // La imagen activa: si hay imágenes en Firestore las usa, si no usa un fondo sólido
-  const imagenActual = imagenes[index % (imagenes.length || 1)];
-  const textoActual  = SLIDES_TEXTO[index];
+  const textoActual = SLIDES_TEXTO[index];
 
   return (
-    <section className="relative w-full h-screen bg-[#2A1810] overflow-hidden flex items-center">
+    // He añadido z-10 para asegurar que el contenido se mantenga bajo el navbar (z-50) pero sobre el fondo
+    <section className="relative w-full h-screen bg-[#2A1810] overflow-hidden flex items-center pt-20 md:pt-0">
 
-      {/* ── Fondos dinámicos — SOLO imagen cambia ── */}
+      {/* ── Fondos dinámicos (z-0 por defecto) ── */}
       {SLIDES_TEXTO.map((_, i) => {
         const img = imagenes[i % (imagenes.length || 1)];
         return (
@@ -146,7 +130,7 @@ export default function HeroCentroDocente() {
             className={`absolute inset-0 transition-opacity duration-[2000ms] ease-in-out ${i === index ? "opacity-100" : "opacity-0"}`}
             style={{
               backgroundImage: img
-                ? `linear-gradient(to right, rgba(42,24,16,0.9), rgba(42,24,16,0.4)), url(${img})`
+                ? `linear-gradient(to right, rgba(42,24,16,0.95), rgba(42,24,16,0.4)), url(${img})`
                 : `linear-gradient(135deg, #2A1810 0%, #4a2010 100%)`,
               backgroundSize: "cover",
               backgroundPosition: "center",
@@ -155,43 +139,57 @@ export default function HeroCentroDocente() {
         );
       })}
 
+      {/* Contenedor de contenido con z-10 relativo para no chocar con el Navbar */}
       <div className="relative z-10 max-w-7xl mx-auto px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
 
-        {/* ── LADO IZQUIERDO — textos fijos ── */}
+        {/* ── LADO IZQUIERDO ── */}
         <div className="text-white space-y-6">
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            key={`lema-${index}`}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
             className="text-red-500 font-black tracking-[0.4em] text-xs md:text-sm uppercase">
             Centro de Alto Rendimiento Docente
           </motion.p>
 
-          <h1 className="text-4xl md:text-7xl font-light leading-tight">
+          <motion.h1 
+            key={`titulo-${index}`}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-4xl md:text-7xl font-light leading-tight">
             {textoActual.lema.split(" ").map((word, i) => (
               <span key={i} className={i === 1 || i === 2 ? "font-black" : ""}>{word} </span>
             ))}
-          </h1>
+          </motion.h1>
 
-          <p className="text-lg text-white/60 max-w-lg leading-relaxed font-medium">
+          <motion.p 
+            key={`sub-${index}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-lg text-white/60 max-w-lg leading-relaxed font-medium">
             {textoActual.subtitulo}
-          </p>
+          </motion.p>
 
           <div className="flex flex-wrap gap-4 pt-4">
             <Link href={textoActual.href}
-              className="flex items-center gap-2 px-6 py-3 text-[11px] font-black uppercase tracking-widest border border-white/20 text-white hover:bg-white/10 transition-all">
+              className="flex items-center gap-2 px-6 py-3 text-[11px] font-black uppercase tracking-widest border border-white/20 text-white hover:bg-white hover:text-black transition-all">
               {textoActual.boton} <ChevronRight size={14} />
             </Link>
-            <div className="flex items-center gap-2 text-[10px] font-black tracking-widest text-white/40 border border-white/10 px-5 py-2.5 rounded-full uppercase">
-              <CheckCircle size={14} className="text-red-600" /> Innovación Pedagógica
-            </div>
+
+            <Link href="/certificados"
+              style={{ backgroundColor: COLOR_ROJO }}
+              className="flex items-center gap-2 px-6 py-3 text-[11px] font-black uppercase tracking-widest text-white transition-all hover:brightness-110 shadow-lg active:scale-95">
+              <Award size={14} /> Ver mis Certificados
+            </Link>
           </div>
         </div>
 
-        {/* ── LADO DERECHO: LOGIN FUNCIONAL ── */}
-        <div className="hidden lg:block relative">
+        {/* ── LADO DERECHO: LOGIN ── */}
+        <div className="hidden lg:block relative z-20">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
             className="w-full max-w-[400px] bg-white ml-auto shadow-[0_30px_100px_rgba(0,0,0,0.5)] relative overflow-hidden rounded-sm">
 
             <div className="h-1.5 w-full flex">
@@ -258,7 +256,7 @@ export default function HeroCentroDocente() {
       </div>
 
       {/* ── Indicadores laterales ── */}
-      <div className="absolute left-6 md:left-12 top-1/2 -translate-y-1/2 flex flex-col gap-10 z-20">
+      <div className="absolute left-6 md:left-12 top-1/2 -translate-y-1/2 flex flex-col gap-10 z-30">
         {SLIDES_TEXTO.map((_, i) => (
           <button key={i} onClick={() => !isAnimating && setIndex(i)}
             className="group flex flex-col items-center gap-3">

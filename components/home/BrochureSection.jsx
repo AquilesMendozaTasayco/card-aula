@@ -55,7 +55,7 @@ export default function AccesoPlataformaSection() {
             className="flex-shrink-0"
             >
             <Link
-                href="/admin/login"
+                href="/login"
                 className="flex items-center gap-4 bg-white text-[#8B0000] font-black px-10 py-5 transition-all duration-300 hover:bg-slate-900 hover:text-white shadow-2xl tracking-[0.2em] uppercase text-[11px] rounded-sm"
             >
                 <HiOutlineLogin size={20} />
