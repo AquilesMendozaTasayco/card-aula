@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { FaFacebookF, FaTiktok, FaYoutube } from "react-icons/fa";
+import { FaFacebookF, FaYoutube } from "react-icons/fa";
 import { HiMenuAlt3, HiX } from "react-icons/hi";
 import { 
   Home, 
@@ -17,12 +17,13 @@ import { motion, AnimatePresence } from "framer-motion";
 const NAV_LINKS = [
   { name: "INICIO", href: "/", icon: Home },
   { name: "NOSOTROS", href: "/nosotros", icon: Info },
-  { name: "CURSOS", href: "/cursos", icon: GraduationCap }, // Ahora es un link directo
-  { name: "CONTACTO", href: "/contacto", icon: Mail },      // Movido al final
+  { name: "CURSOS", href: "/cursos", icon: GraduationCap },
+  { name: "CONTACTO", href: "/contacto", icon: Mail },
 ];
 
 const SOCIAL_LINKS = [
   { Icon: FaYoutube, url: "https://www.youtube.com/watch?v=0bWs3tij5m0" },
+  { Icon: FaFacebookF, url: "https://www.facebook.com/CARD.PERU2021" },
 ];
 
 export default function NavbarTransparente() {
@@ -85,6 +86,8 @@ export default function NavbarTransparente() {
               <a
                 key={idx}
                 href={url}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-all"
               >
                 <Icon size={14} />
@@ -132,6 +135,21 @@ export default function NavbarTransparente() {
                     <link.icon size={22} className="opacity-50" />
                     {link.name}
                   </Link>
+                ))}
+              </div>
+              
+              {/* Redes en móvil */}
+              <div className="flex items-center space-x-6 pt-5 border-t border-white/10">
+                {SOCIAL_LINKS.map(({ Icon, url }, idx) => (
+                  <a
+                    key={idx}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-white/60 hover:text-white transition-all"
+                  >
+                    <Icon size={24} />
+                  </a>
                 ))}
               </div>
             </div>

@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { FaFacebookF, FaInstagram, FaTiktok, FaYoutube, FaWhatsapp } from "react-icons/fa";
+import { FaFacebookF, FaYoutube } from "react-icons/fa";
 import { HiOutlineMail, HiOutlineLocationMarker, HiOutlinePhone } from "react-icons/hi";
 
 export default function FooterCARD() {
   const currentYear = new Date().getFullYear();
 
   // 🎨 Estilos basados en el Rojo del Navbar
-  const colorRojoFondo = "#8B0000"; // Asegúrate de que este sea el hex exacto de tu navbar
+  const colorRojoFondo = "#8B0000"; 
   const linkStyle = "text-white/70 hover:text-white transition-all duration-300 text-[10px] uppercase tracking-[0.2em] block py-1 hover:translate-x-1";
   const iconBoxStyle = "w-10 h-10 flex items-center justify-center border border-white/20 text-white hover:bg-white hover:text-[#8B0000] transition-all duration-400 rounded-sm";
 
@@ -22,21 +22,25 @@ export default function FooterCARD() {
           {/* 🏛️ Columna 1: Branding CARD */}
           <div className="space-y-10">
             <div className="flex items-center">
-              {/* Logo en blanco para resaltar sobre el fondo rojo */}
               <img src="/logo-11.png" alt="CARD Logo" className="h-20" />
             </div>
             <p className="text-white/80 text-[11px] leading-relaxed max-w-xs font-medium uppercase tracking-wider">
               Centro de Alto Rendimiento Docente. <br />
               <span className="text-white/60">Liderando la actualización pedagógica con excelencia académica.</span>
             </p>
+            
+            {/* Redes Sociales Actualizadas */}
             <div className="flex flex-wrap gap-3">
-              <a href="https://www.youtube.com/watch?v=0bWs3tij5m0" target="_blank" className={iconBoxStyle}>
+              <a href="https://www.youtube.com/watch?v=0bWs3tij5m0" target="_blank" rel="noopener noreferrer" className={iconBoxStyle}>
                 <FaYoutube size={14} />
+              </a>
+              <a href="https://www.facebook.com/CARD.PERU2021" target="_blank" rel="noopener noreferrer" className={iconBoxStyle}>
+                <FaFacebookF size={14} />
               </a>
             </div>
           </div>
 
-          {/* 🔗 Columna 2: Navegación Solicitada */}
+          {/* 🔗 Columna 2: Navegación */}
           <div>
             <h4 className="text-white font-black uppercase tracking-[0.4em] text-[10px] mb-10 border-l-2 border-white pl-4">
               Menú Principal
@@ -49,7 +53,7 @@ export default function FooterCARD() {
             </ul>
           </div>
 
-          {/* 🏗️ Columna 3: Ecosistema */}
+          {/* 🏗️ Columna 3: Aula Virtual */}
           <div>
             <h4 className="text-white font-black uppercase tracking-[0.4em] text-[10px] mb-10 border-l-2 border-white pl-4">
               Aula Virtual
@@ -94,17 +98,35 @@ export default function FooterCARD() {
 
         </div>
 
-        {/* 📜 Barra Legal Inferior */}
-        <div className="mt-24 pt-10 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-8 text-white/40">
+        {/* 📜 Barra Legal Inferior y Crédito Actualizado */}
+        <div className="mt-24 pt-10 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="text-center md:text-left">
-            <p className="text-[9px] tracking-[0.3em] uppercase font-medium">
+            <p className="text-white/40 text-[9px] tracking-[0.3em] uppercase font-medium">
               © {currentYear} CENTRO DE ALTO RENDIMIENTO DOCENTE.
             </p>
-            <p className="text-[8px] tracking-[0.1em] uppercase mt-1">
+            <p className="text-white/40 text-[8px] tracking-[0.1em] uppercase mt-1">
               Mg. Reymer Luiz Basilio Gamarra - Director General
             </p>
           </div>
-          <div className="flex gap-8 text-[9px] tracking-[0.3em] uppercase font-medium">
+
+          {/* Crédito de Desarrollador con Logo */}
+          <a 
+            href="https://www.emocion.pe/" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="flex flex-col items-center gap-2 group transition-opacity hover:opacity-80"
+          >
+            <p className="text-white/30 text-[7px] tracking-[0.4em] uppercase">
+              Desarrollado por:
+            </p>
+            <img 
+              src="/branding.png" 
+              alt="Branding Emoción" 
+              className="h-8 w-auto opacity-80 group-hover:opacity-100 transition-all"
+            />
+          </a>
+
+          <div className="flex gap-8 text-white/40 text-[9px] tracking-[0.3em] uppercase font-medium">
             <Link href="#" className="hover:text-white transition-colors">Privacidad</Link>
             <Link href="#" className="hover:text-white transition-colors">Términos</Link>
             <Link href="#" className="hover:text-white transition-colors">Reclamos</Link>
