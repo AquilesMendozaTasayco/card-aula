@@ -108,23 +108,28 @@ export default function ValidarCertificadoPage() {
         <div className="p-8 md:p-12">
 
           <div className="text-center mb-10">
-            <motion.div whileHover={{ rotate: 5 }}
-              className="inline-flex items-center justify-center w-20 h-20 bg-stone-50 rounded-2xl mb-6 shadow-inner border border-stone-100">
-              <Award className="h-10 w-10" style={{ color: colorRojo }} />
+            {/* LOGO EN LUGAR DEL ICONO */}
+            <motion.div whileHover={{ scale: 1.05 }} className="inline-flex items-center justify-center mb-6">
+              <img 
+                src="/logo-11.png" 
+                alt="Logo Centro de Rendimiento" 
+                className="h-20 w-auto object-contain" 
+              />
             </motion.div>
+            
             <h1 className="text-3xl font-black uppercase tracking-tight text-slate-900 leading-none">
-              VALIDAR <span style={{ color: colorRojo }}>CÓDIGO</span>
+              CONSULTA DE <span style={{ color: colorRojo }}>CERTIFICADO</span>
             </h1>
             <div className="flex items-center justify-center gap-2 mt-3">
               <div className="h-[1px] w-8 bg-stone-300" />
-              <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-stone-400">Certificado de Finalización</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-stone-400">Verificación Institucional</p>
               <div className="h-[1px] w-8 bg-stone-300" />
             </div>
           </div>
 
           <AnimatePresence mode="wait">
 
-            {/* Formulario (estado null o valido para poder revalirar) */}
+            {/* Formulario */}
             {estado !== "invalido" && (
               <motion.form key="form" onSubmit={handleValidar}
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
@@ -190,9 +195,7 @@ export default function ValidarCertificadoPage() {
         </div>
       </motion.div>
 
-      {/* ══════════════════════════════════════════
-          MODAL CERTIFICADO VÁLIDO
-      ══════════════════════════════════════════ */}
+      {/* ── MODAL CERTIFICADO VÁLIDO ── */}
       <AnimatePresence>
         {mostrarModal && resultado && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -319,4 +322,4 @@ export default function ValidarCertificadoPage() {
 
     </div>
   );
-}   
+}

@@ -119,10 +119,9 @@ export default function HeroCentroDocente() {
   const textoActual = SLIDES_TEXTO[index];
 
   return (
-    // He añadido z-10 para asegurar que el contenido se mantenga bajo el navbar (z-50) pero sobre el fondo
     <section className="relative w-full h-screen bg-[#2A1810] overflow-hidden flex items-center pt-20 md:pt-0">
 
-      {/* ── Fondos dinámicos (z-0 por defecto) ── */}
+      {/* ── Fondos dinámicos ── */}
       {SLIDES_TEXTO.map((_, i) => {
         const img = imagenes[i % (imagenes.length || 1)];
         return (
@@ -139,7 +138,7 @@ export default function HeroCentroDocente() {
         );
       })}
 
-      {/* Contenedor de contenido con z-10 relativo para no chocar con el Navbar */}
+      {/* Contenedor de contenido */}
       <div className="relative z-10 max-w-7xl mx-auto px-6 w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
 
         {/* ── LADO IZQUIERDO ── */}
@@ -200,8 +199,13 @@ export default function HeroCentroDocente() {
 
             <div className="p-10">
               <div className="text-center mb-8">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-stone-50 rounded-2xl mb-4 border border-stone-100">
-                  <GraduationCap className="h-8 w-8" style={{ color: COLOR_ROJO }} />
+                {/* LOGO REEMPLAZANDO AL ICONO */}
+                <div className="inline-flex items-center justify-center mb-6">
+                  <img 
+                    src="/logo-11.png" 
+                    alt="Logo CARD" 
+                    className="h-24 w-auto object-contain" 
+                  />
                 </div>
                 <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 leading-none">
                   AULA <span style={{ color: COLOR_ROJO }}>VIRTUAL</span>

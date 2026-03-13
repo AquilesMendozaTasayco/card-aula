@@ -1,7 +1,7 @@
 "use client";
 
 import PageHero from "@/components/PageHero";
-import { MapPin, Mail, Phone, Facebook, Instagram, Linkedin, Send, GraduationCap, MessageSquareText } from "lucide-react";
+import { MapPin, Mail, Phone, Send, MessageSquareText, Award } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function ContactoPage() {
@@ -49,7 +49,7 @@ export default function ContactoPage() {
 
           <div className="grid lg:grid-cols-12 gap-12 items-stretch">
             
-            {/* PANEL DE INFORMACIÓN (4 columnas) */}
+            {/* PANEL DE INFORMACIÓN (5 columnas) */}
             <motion.div 
               initial={{ opacity: 0, x: -30 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -60,22 +60,22 @@ export default function ContactoPage() {
                 { 
                   icon: <Phone size={24} />, 
                   label: "Línea Directa", 
-                  value: "+51 987 654 321", 
-                  sub: "Atención Lunes a Sábado",
+                  value: "953 491 650", 
+                  sub: "951 698 887",
                   color: COLOR_ROJO 
                 },
                 { 
                   icon: <Mail size={24} />, 
                   label: "Consultas Académicas", 
-                  value: "informes@card.edu.pe", 
+                  value: "card.peru21@mail.com", 
                   sub: "Respuesta en menos de 24h",
                   color: COLOR_NARANJA 
                 },
                 { 
                   icon: <MapPin size={24} />, 
                   label: "Sede Institucional", 
-                  value: "Urb. Las Flores MZ F lote 10", 
-                  sub: "Trujillo - La Libertad",
+                  value: "Av. Palma Real S/N", 
+                  sub: "Independencia - Huaraz - Ancash",
                   color: COLOR_OSCURO 
                 },
               ].map((item, i) => (
@@ -91,6 +91,15 @@ export default function ContactoPage() {
                 </div>
               ))}
 
+              <div className="p-8 bg-[#2A1810] text-white">
+                <div className="flex items-center gap-4 mb-4">
+                  <Award className="text-red-500" />
+                  <h4 className="text-[10px] uppercase tracking-[0.3em] font-black">Certificación Oficial</h4>
+                </div>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  Todos nuestros programas cuentan con respaldo institucional para el escalafón magisterial.
+                </p>
+              </div>
             </motion.div>
 
             {/* FORMULARIO ESTILO "EXPEDIENTE" (7 columnas) */}
@@ -159,18 +168,19 @@ export default function ContactoPage() {
         </div>
       </section>
 
-      {/* MAPA CON ESTILO CARD (MODERNO) */}
+      {/* MAPA ACTUALIZADO A HUARAZ */}
       <section className="px-6 md:px-12 lg:px-24 pb-24">
-        <div className="w-full h-[500px] relative border-4 border-stone-50 overflow-hidden shadow-inner">
+        <div className="w-full h-[500px] relative border-4 border-stone-50 overflow-hidden shadow-inner rounded-sm">
           {/* Badge flotante sobre el mapa */}
           <div className="absolute top-10 left-10 z-20 bg-white p-6 shadow-2xl border-t-4" style={{ borderTopColor: COLOR_ROJO }}>
-             <h4 className="text-[10px] font-black uppercase tracking-widest mb-2 text-slate-400">Nuestra Sede Central</h4>
-             <p className="text-sm font-black text-slate-800">Trujillo, La Libertad</p>
+              <h4 className="text-[10px] font-black uppercase tracking-widest mb-2 text-slate-400">Nuestra Sede Central</h4>
+              <p className="text-sm font-black text-slate-800">Independencia, Huaraz</p>
+              <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold">Av. Palma Real S/N</p>
           </div>
           
           <iframe 
-            title="Ubicación CARD"
-            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d15801.439812921562!2d-79.0279!3d-8.1127!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x91ad3d86641e176b%3A0x6d90a8a649692451!2sTrujillo!5e0!3m2!1ses-419!2spe!4v1710000000000" 
+            title="Ubicación CARD Huaraz"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d15701.37328905386!2d-77.5312048!3d-9.5218968!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x91a90d1170d1891b%3A0x6734130f142b7812!2sIndependencia%2C%20Huaraz!5e0!3m2!1ses!2spe!4v1700000000000!5m2!1ses!2spe" 
             width="100%" 
             height="100%" 
             style={{ border: 0 }} 
