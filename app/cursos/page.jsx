@@ -14,7 +14,7 @@ const CURSOS_DATA = [
     tag: "INGRESO A LA CPM",
     descripcion: "Programa de alto rendimiento diseñado para asegurar tu ingreso a la Carrera Pública Magisterial. Incluye preparación integral en razonamiento lógico, comprensión lectora y conocimientos pedagógicos específicos por niveles.",
     beneficios: ["Simulacros ilimitados", "Especialistas del MINEDU", "Acceso 24/7 a plataforma"],
-    imagen: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=80&w=1200",
+    imagen: "/img1.webp",
   },
   {
     id: "ascenso",
@@ -22,7 +22,7 @@ const CURSOS_DATA = [
     tag: "CRECIMIENTO PROFESIONAL",
     descripcion: "Potenciamos tu trayectoria profesional para alcanzar el siguiente nivel en la escala magisterial. Basado en casuística pedagógica avanzada y análisis crítico de las rúbricas de evaluación vigentes.",
     beneficios: ["Casuística por áreas", "Asesoría personalizada", "Certificación válida para escalafón"],
-    imagen: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=80&w=2070&auto=format&fit=crop",
+    imagen: "/img2.png",
   },
   {
     id: "quechua",
@@ -30,7 +30,7 @@ const CURSOS_DATA = [
     tag: "DOMINIO LINGÜÍSTICO",
     descripcion: "Especialización integral en Quechua Central y Sureño. Prepárate para la evaluación de dominio lingüístico con expertos en educación intercultural bilingüe y metodología práctica.",
     beneficios: ["Preparación oral y escrita", "Nivel Básico a Avanzado", "Vocabulario técnico pedagógico"],
-    imagen: "https://images.unsplash.com/photo-1544531585-9847b68c8c86?q=80&w=2070&auto=format&fit=crop",
+    imagen: "/img3.jpg",
   },
 ];
 

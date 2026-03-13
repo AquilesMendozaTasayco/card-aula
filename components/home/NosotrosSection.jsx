@@ -93,7 +93,7 @@ export default function NosotrosCARD() {
           {/* Contenedor de Imagen Principal */}
           <div className="relative w-full h-[380px] md:h-[600px] z-10 shadow-2xl overflow-hidden rounded-sm">
             <Image
-              src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=2070&auto=format&fit=crop" 
+              src="/img4.jpg" 
               alt="Centro de Alto Rendimiento Docente"
               fill
               className="object-cover transition-transform duration-1000 group-hover:scale-105"
