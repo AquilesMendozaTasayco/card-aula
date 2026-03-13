@@ -30,20 +30,8 @@ export default function FooterCARD() {
               <span className="text-white/60">Liderando la actualización pedagógica con excelencia académica.</span>
             </p>
             <div className="flex flex-wrap gap-3">
-              <a href="#" target="_blank" className={iconBoxStyle}>
-                <FaFacebookF size={14} />
-              </a>
-              <a href="#" target="_blank" className={iconBoxStyle}>
-                <FaInstagram size={14} />
-              </a>
-              <a href="#" target="_blank" className={iconBoxStyle}>
-                <FaTiktok size={14} />
-              </a>
-              <a href="#" target="_blank" className={iconBoxStyle}>
+              <a href="https://www.youtube.com/watch?v=0bWs3tij5m0" target="_blank" className={iconBoxStyle}>
                 <FaYoutube size={14} />
-              </a>
-              <a href="https://wa.me/51950017122" target="_blank" className={iconBoxStyle}>
-                <FaWhatsapp size={14} />
               </a>
             </div>
           </div>
@@ -67,10 +55,10 @@ export default function FooterCARD() {
               Aula Virtual
             </h4>
             <ul className="space-y-5">
-              <li><Link href="/admin/login" className={linkStyle}>Acceso Estudiantes</Link></li>
-              <li><Link href="/cursos/nombramiento" className={linkStyle}>Nombramiento Docente</Link></li>
-              <li><Link href="/cursos/ascenso" className={linkStyle}>Ascenso de Escala</Link></li>
-              <li><Link href="/cursos/quechua" className={linkStyle}>Lengua Quechua</Link></li>
+              <li><Link href="/login" className={linkStyle}>Acceso Estudiantes</Link></li>
+              <li><Link href="/cursos/" className={linkStyle}>Nombramiento Docente</Link></li>
+              <li><Link href="/cursos/" className={linkStyle}>Ascenso de Escala</Link></li>
+              <li><Link href="/cursos/" className={linkStyle}>Lengua Quechua</Link></li>
             </ul>
           </div>
 

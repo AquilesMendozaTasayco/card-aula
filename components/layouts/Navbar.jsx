@@ -22,9 +22,7 @@ const NAV_LINKS = [
 ];
 
 const SOCIAL_LINKS = [
-  { Icon: FaFacebookF, url: "#" },
-  { Icon: FaTiktok, url: "#" },
-  { Icon: FaYoutube, url: "#" },
+  { Icon: FaYoutube, url: "https://www.youtube.com/watch?v=0bWs3tij5m0" },
 ];
 
 export default function NavbarTransparente() {

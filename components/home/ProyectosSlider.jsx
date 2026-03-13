@@ -12,7 +12,7 @@ const programas = [
     estado: "INSCRIPCIONES ABIERTAS",
     descripcion:
       "Preparación integral de alto nivel para asegurar tu ingreso a la Carrera Pública Magisterial con metodologías probadas por expertos.",
-    imagen: "/img1.webp", 
+    imagen: "/img5.1.jpg", 
   },
   {
     id: "ascenso-escala",
@@ -20,7 +20,7 @@ const programas = [
     estado: "GRUPOS NUEVOS",
     descripcion:
       "Potenciamos tu trayectoria profesional para alcanzar el siguiente nivel en la escala magisterial con casuística avanzada.",
-    imagen: "/img2.png",
+    imagen: "/img6.jpg",
   },
   {
     id: "dominio-lengua",
@@ -28,7 +28,7 @@ const programas = [
     estado: "ESPECIALIZACIÓN",
     descripcion:
       "Domina el Quechua Central y Sureño para la Evaluación de Dominio Lingüístico con enfoque intercultural y práctico.",
-    imagen: "/img3.jpg", 
+    imagen: "/img7.jpg", 
   },
 ];
 

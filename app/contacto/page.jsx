@@ -91,15 +91,6 @@ export default function ContactoPage() {
                 </div>
               ))}
 
-              {/* REDES CARD */}
-              <div className="p-8 bg-slate-900 text-white flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest">Comunidad CARD</span>
-                <div className="flex gap-4">
-                  <Facebook size={18} className="hover:text-red-500 cursor-pointer" />
-                  <Instagram size={18} className="hover:text-red-500 cursor-pointer" />
-                  <Linkedin size={18} className="hover:text-red-500 cursor-pointer" />
-                </div>
-              </div>
             </motion.div>
 
             {/* FORMULARIO ESTILO "EXPEDIENTE" (7 columnas) */}
