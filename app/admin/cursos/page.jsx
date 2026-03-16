@@ -68,6 +68,7 @@ export default function AdminCursosPage() {
   const [subiendoPortada, setSubiendoPortada] = useState(false);
   const [subiendoMaterial, setSubiendoMaterial] = useState(false);
   const [subiendoAdjunto, setSubiendoAdjunto] = useState(false);
+  const [subiendoCertificado, setSubiendoCertificado] = useState(false);
   const [busqueda, setBusqueda]           = useState("");
   const [tab, setTab]                     = useState("info");
   const [matriculados, setMatriculados]   = useState([]);
@@ -116,6 +117,39 @@ export default function AdminCursosPage() {
       Swal.fire({ icon: "success", title: "Portada cargada", timer: 1000, showConfirmButton: false });
     } catch { Swal.fire({ icon: "error", title: "Error al subir portada", confirmButtonColor: COLOR.rojo }); }
     finally { setSubiendoPortada(false); }
+  };
+
+  const subirCertificadoCurso = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      setSubiendoCertificado(true);
+      const r = ref(storage, `cursos/certificados/${Date.now()}_${file.name}`);
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+      setForm(p => ({ ...p, tituloFinal: url }));
+      Swal.fire({ icon: "success", title: "Certificado del curso cargado", timer: 1200, showConfirmButton: false });
+    } catch { Swal.fire({ icon: "error", title: "Error al subir certificado", confirmButtonColor: COLOR.rojo }); }
+    finally { setSubiendoCertificado(false); }
+  };
+
+  const subirCertificadoEstudiante = async (e, cursoId, estId) => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const r = ref(storage, `certificados/${cursoId}/${estId}_${Date.now()}_${file.name}`);
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+      await setDoc(doc(db, "estudiantes_progreso", estId), {
+        [`certificado_${cursoId}`]: url,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setProgresoMap(prev => ({
+        ...prev,
+        [estId]: { ...(prev[estId] || {}), [`certificado_${cursoId}`]: url },
+      }));
+      Swal.fire({ icon: "success", title: "Certificado subido", timer: 1500, showConfirmButton: false });
+    } catch {
+      Swal.fire({ icon: "error", title: "Error al subir certificado", confirmButtonColor: COLOR.rojo });
+    }
   };
 
   const subirPDF = async (e) => {
@@ -346,7 +380,7 @@ export default function AdminCursosPage() {
   const marcarCompletadoAdmin = async (cursoId, estId, estNombre) => {
     const res = await Swal.fire({
       title: `¿Marcar como completado?`,
-      html: `<p class="text-sm text-gray-600">Estudiante: <strong>${estNombre}</strong><br>Se generará un código único de certificado.</p>`,
+      html: `<p style="font-size:13px;color:#6b7280">Estudiante: <strong>${estNombre}</strong><br/>Se generará un código único de certificado.</p>`,
       icon: "question", showCancelButton: true,
       confirmButtonColor: COLOR.rojo, cancelButtonColor: "#6b7280",
       confirmButtonText: "Sí, marcar", cancelButtonText: "Cancelar",
@@ -359,10 +393,19 @@ export default function AdminCursosPage() {
         [`codigo_${cursoId}`]: codigo,
         updatedAt: serverTimestamp(),
       }, { merge: true });
-      setProgresoMap(prev => ({ ...prev, [estId]: { ...(prev[estId] || {}), [`completado_${cursoId}`]: true, [`codigo_${cursoId}`]: codigo } }));
+      setProgresoMap(prev => ({
+        ...prev,
+        [estId]: {
+          ...(prev[estId] || {}),
+          [`completado_${cursoId}`]: true,
+          [`codigo_${cursoId}`]: codigo,
+        },
+      }));
       Swal.fire({
-        icon: "success", title: "Curso marcado como completado",
-        html: `<p class="text-sm text-gray-600">Código generado:</p><p class="text-lg font-black tracking-widest mt-2" style="color:#EF3340">${codigo}</p>`,
+        icon: "success",
+        title: "Curso marcado como completado",
+        html: `<p style="font-size:13px;color:#6b7280">Código generado:</p>
+               <p style="font-size:18px;font-weight:900;letter-spacing:0.2em;margin-top:8px;color:#EF3340">${codigo}</p>`,
         confirmButtonColor: COLOR.rojo,
       });
     } catch { Swal.fire({ icon: "error", title: "Error al marcar", confirmButtonColor: COLOR.rojo }); }
@@ -399,6 +442,103 @@ export default function AdminCursosPage() {
     if (!fecha) return "Sin fecha";
     const d = new Date(`${fecha}T${hora || "00:00"}`);
     return d.toLocaleString("es-PE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  // ── Componente reutilizable: fila de estudiante con certificado ────────
+  const FilaEstudiante = ({ est, cursoId, enModal = false }) => {
+    const prog       = progresoMap[est.id] || {};
+    const completado = prog[`completado_${cursoId}`];
+    const codigo     = prog[`codigo_${cursoId}`];
+    const certUrl    = prog[`certificado_${cursoId}`];
+    const mat        = enModal ? matriculados.includes(est.id) : true;
+
+    return (
+      <div className="border border-stone-100 bg-white overflow-hidden">
+        {/* Fila principal */}
+        <div className="flex items-center justify-between p-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[10px] font-black"
+              style={{ backgroundColor: completado ? "#22c55e" : mat ? COLOR.rojo : "#e5e7eb" }}>
+              {completado ? <CheckCircle size={14} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
+            </div>
+            <div>
+              <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
+              {codigo ? (
+                <p className="text-[9px] font-black tracking-wider" style={{ color: COLOR.naranja }}>
+                  <Hash size={8} className="inline mr-0.5" />{codigo}
+                </p>
+              ) : (
+                <p className="text-[10px] text-stone-400">{est.email}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-1.5 flex-shrink-0">
+            {/* Botón marcar completado */}
+            {mat && !completado && (
+              <button
+                onClick={() => marcarCompletadoAdmin(cursoId, est.id, `${est.nombres} ${est.apellidos}`)}
+                className="p-2 text-white flex items-center gap-1"
+                style={{ backgroundColor: "#22c55e" }}
+                title="Marcar como completado">
+                <CheckCircle size={13} />
+              </button>
+            )}
+            {/* Badge finalizado */}
+            {completado && (
+              <span className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-green-600 border border-green-200 bg-green-50 flex items-center gap-1">
+                <GraduationCap size={11} /> Fin.
+              </span>
+            )}
+            {/* Botón matricular/quitar (solo en modal rápido) */}
+            {enModal && (
+              <button
+                onClick={() => toggleMatricula(est.id)}
+                className={`px-3 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${
+                  mat ? "border border-red-200 text-red-500 hover:bg-red-50" : "text-white"
+                }`}
+                style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
+                {mat ? "Quitar" : "+"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Fila certificado — solo si completó */}
+        {completado && (
+          <div className="px-3 pb-2.5 pt-2 border-t border-stone-100 bg-stone-50 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Award size={12} style={{ color: certUrl ? "#22c55e" : COLOR.naranja }} />
+              <span className="text-[9px] font-black uppercase tracking-wider"
+                style={{ color: certUrl ? "#22c55e" : COLOR.naranja }}>
+                {certUrl ? "Certificado listo" : "Sin certificado aún"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {certUrl && (
+                <a href={certUrl} target="_blank" rel="noreferrer"
+                  className="text-[9px] font-black uppercase tracking-wider underline"
+                  style={{ color: COLOR.naranja }}>
+                  Ver
+                </a>
+              )}
+              <label
+                className="flex items-center gap-1 cursor-pointer px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-white"
+                style={{ backgroundColor: certUrl ? COLOR.marron : COLOR.rojo }}>
+                <Upload size={9} />
+                {certUrl ? "Reemplazar" : "Subir"}
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  className="hidden"
+                  onChange={e => subirCertificadoEstudiante(e, cursoId, est.id)}
+                />
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -461,6 +601,12 @@ export default function AdminCursosPage() {
                   <span className={`absolute top-3 left-3 px-2 py-1 text-[9px] font-black uppercase tracking-tighter shadow-sm ${curso.activo ? "bg-green-500 text-white" : "bg-stone-400 text-white"}`}>
                     {curso.activo ? "Activo" : "Inactivo"}
                   </span>
+                  {/* Badge si tiene certificado de curso */}
+                  {curso.tituloFinal && (
+                    <span className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-tighter bg-amber-500 text-white shadow-sm">
+                      <Award size={10} /> Cert.
+                    </span>
+                  )}
                 </div>
                 <div className="p-5">
                   <h3 className="text-[15px] font-black text-slate-900 leading-tight mb-2 line-clamp-2">{curso.titulo}</h3>
@@ -540,7 +686,28 @@ export default function AdminCursosPage() {
                       </div>
                     ))}
                   </div>
-                  {/* Contenidos con adjuntos */}
+
+                  {/* Certificado del curso */}
+                  <div className="p-4 bg-stone-50 border border-stone-100">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Award size={14} style={{ color: showDetalle.tituloFinal ? "#22c55e" : COLOR.naranja }} />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Certificado del curso</p>
+                      </div>
+                      {showDetalle.tituloFinal && (
+                        <a href={showDetalle.tituloFinal} target="_blank" rel="noreferrer"
+                          className="text-[9px] font-black uppercase tracking-wider underline"
+                          style={{ color: COLOR.naranja }}>
+                          Ver certificado
+                        </a>
+                      )}
+                    </div>
+                    {!showDetalle.tituloFinal && (
+                      <p className="text-[10px] text-stone-400 mt-1">Sin certificado general subido aún</p>
+                    )}
+                  </div>
+
+                  {/* Contenidos */}
                   {(showDetalle.contenidos || []).length > 0 && (
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">Contenidos</p>
@@ -576,6 +743,7 @@ export default function AdminCursosPage() {
                       </div>
                     </div>
                   )}
+
                   {/* Clases */}
                   {(showDetalle.clases || []).length > 0 && (
                     <div>
@@ -608,7 +776,8 @@ export default function AdminCursosPage() {
                       </div>
                     </div>
                   )}
-                  {/* Estudiantes */}
+
+                  {/* Estudiantes con certificados */}
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">
                       Estudiantes Matriculados ({(showDetalle.matriculados || []).length})
@@ -617,38 +786,16 @@ export default function AdminCursosPage() {
                       <p className="text-[11px] text-stone-300 font-bold">Sin estudiantes matriculados</p>
                     ) : (
                       <div className="space-y-2">
-                        {estudiantes.filter(e => (showDetalle.matriculados || []).includes(e.id)).map(est => {
-                          const prog      = progresoMap[est.id] || {};
-                          const completado = prog[`completado_${showDetalle.id}`];
-                          const codigo    = prog[`codigo_${showDetalle.id}`];
-                          return (
-                            <div key={est.id} className="flex items-center justify-between p-3 bg-white border border-stone-100">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-black"
-                                  style={{ backgroundColor: completado ? "#22c55e" : COLOR.rojo }}>
-                                  {completado ? <CheckCircle size={14} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
-                                </div>
-                                <div>
-                                  <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
-                                  {codigo
-                                    ? <p className="text-[10px] font-black tracking-wider" style={{ color: COLOR.naranja }}><Hash size={9} className="inline mr-0.5" />{codigo}</p>
-                                    : <p className="text-[10px] text-stone-400">{est.email}</p>}
-                                </div>
-                              </div>
-                              {!completado ? (
-                                <button onClick={() => marcarCompletadoAdmin(showDetalle.id, est.id, `${est.nombres} ${est.apellidos}`)}
-                                  className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white flex items-center gap-1"
-                                  style={{ backgroundColor: "#22c55e" }}>
-                                  <CheckCircle size={11} /> Completado
-                                </button>
-                              ) : (
-                                <span className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-green-600 border border-green-200 bg-green-50 flex items-center gap-1">
-                                  <GraduationCap size={11} /> Finalizado
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                        {estudiantes
+                          .filter(e => (showDetalle.matriculados || []).includes(e.id))
+                          .map(est => (
+                            <FilaEstudiante
+                              key={est.id}
+                              est={est}
+                              cursoId={showDetalle.id}
+                              enModal={false}
+                            />
+                          ))}
                       </div>
                     )}
                   </div>
@@ -719,6 +866,8 @@ export default function AdminCursosPage() {
                         <input type="checkbox" checked={form.activo} onChange={e => setForm(p => ({ ...p, activo: e.target.checked }))} className="h-4 w-4" />
                         <label className="text-[10px] font-black uppercase tracking-widest text-stone-600">Curso activo (visible para estudiantes)</label>
                       </div>
+
+                      {/* Portada */}
                       <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3 block">Imagen de Portada</label>
                         {form.portadaUrl ? (
@@ -735,6 +884,49 @@ export default function AdminCursosPage() {
                               ? <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
                               : <><Upload size={24} className="text-stone-300" /><span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Subir portada</span></>}
                             <input type="file" accept="image/*" onChange={subirPortada} className="hidden" />
+                          </label>
+                        )}
+                      </div>
+
+                      {/* ── CERTIFICADO DEL CURSO ── */}
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1 block">
+                          Certificado General del Curso
+                        </label>
+                        <p className="text-[10px] text-stone-400 mb-3 leading-relaxed">
+                          PDF o imagen que aplica a <strong>todos</strong> los estudiantes que completen este curso.
+                          Si un estudiante tiene su propio certificado, ese tendrá prioridad.
+                        </p>
+                        {form.tituloFinal ? (
+                          <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100">
+                            <div className="flex items-center gap-2">
+                              <Award size={14} className="text-green-500" />
+                              <span className="text-[11px] font-black text-green-700">Certificado cargado</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <a href={form.tituloFinal} target="_blank" rel="noreferrer"
+                                className="text-[9px] font-black uppercase tracking-wider text-green-600 underline">
+                                Ver
+                              </a>
+                              <button onClick={() => setForm(p => ({ ...p, tituloFinal: "" }))}
+                                className="text-[9px] font-black uppercase tracking-wider text-red-400 hover:text-red-600">
+                                Quitar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="flex h-24 cursor-pointer items-center justify-center gap-3 border-2 border-dashed border-stone-200 bg-stone-50 hover:bg-stone-100 transition-all">
+                            {subiendoCertificado
+                              ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
+                                  style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
+                              : <>
+                                  <Award size={20} className="text-stone-300" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">
+                                    Subir certificado (PDF / imagen)
+                                  </span>
+                                </>
+                            }
+                            <input type="file" accept=".pdf,image/*" onChange={subirCertificadoCurso} className="hidden" />
                           </label>
                         )}
                       </div>
@@ -783,7 +975,6 @@ export default function AdminCursosPage() {
                               className="w-full border-b-2 border-stone-200 bg-transparent py-2 text-sm font-medium text-slate-900 outline-none focus:border-red-400 transition-all" />
                           </div>
                         )}
-                        {/* Adjuntos nuevo contenido */}
                         <div className="border-t border-stone-200 pt-4 space-y-3">
                           <div className="flex items-center justify-between">
                             <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">
@@ -816,8 +1007,6 @@ export default function AdminCursosPage() {
                           <Plus size={13} /> Agregar
                         </button>
                       </div>
-
-                      {/* Lista contenidos */}
                       <div className="space-y-2">
                         {(form.contenidos || []).length === 0
                           ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">Sin recursos agregados</p>
@@ -1004,38 +1193,69 @@ export default function AdminCursosPage() {
                       {estFiltradosModal.length === 0
                         ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">No hay estudiantes</p>
                         : pagModal.slice.map(est => {
-                          const mat = (form.matriculados || []).includes(est.id);
-                          const prog = progresoMap[est.id] || {};
+                          const mat        = (form.matriculados || []).includes(est.id);
+                          const prog       = progresoMap[est.id] || {};
                           const completado = editing && prog[`completado_${editing.id}`];
-                          const codigo = editing && prog[`codigo_${editing.id}`];
+                          const codigo     = editing && prog[`codigo_${editing.id}`];
+                          const certUrl    = editing && prog[`certificado_${editing.id}`];
                           return (
-                            <div key={est.id} className="flex items-center justify-between p-3 bg-white border border-stone-200">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-black"
-                                  style={{ backgroundColor: completado ? "#22c55e" : mat ? COLOR.rojo : "#d1d5db" }}>
-                                  {completado ? <CheckCircle size={13} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
+                            <div key={est.id} className="border border-stone-100 bg-white overflow-hidden">
+                              <div className="flex items-center justify-between p-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-black"
+                                    style={{ backgroundColor: completado ? "#22c55e" : mat ? COLOR.rojo : "#d1d5db" }}>
+                                    {completado ? <CheckCircle size={13} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
+                                  </div>
+                                  <div>
+                                    <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
+                                    {codigo
+                                      ? <p className="text-[10px] font-black tracking-wider" style={{ color: COLOR.naranja }}><Hash size={9} className="inline" />{codigo}</p>
+                                      : <p className="text-[10px] text-stone-400">{est.email}</p>}
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
-                                  {codigo
-                                    ? <p className="text-[10px] font-black tracking-wider" style={{ color: COLOR.naranja }}><Hash size={9} className="inline" />{codigo}</p>
-                                    : <p className="text-[10px] text-stone-400">{est.email}</p>}
-                                </div>
-                              </div>
-                              <div className="flex gap-1.5">
-                                {mat && editing && !completado && (
-                                  <button onClick={() => marcarCompletadoAdmin(editing.id, est.id, `${est.nombres} ${est.apellidos}`)}
-                                    className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white flex items-center gap-1"
-                                    style={{ backgroundColor: "#22c55e" }}>
-                                    <CheckCircle size={10} />
+                                <div className="flex gap-1.5">
+                                  {mat && editing && !completado && (
+                                    <button onClick={() => marcarCompletadoAdmin(editing.id, est.id, `${est.nombres} ${est.apellidos}`)}
+                                      className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white flex items-center gap-1"
+                                      style={{ backgroundColor: "#22c55e" }}>
+                                      <CheckCircle size={10} />
+                                    </button>
+                                  )}
+                                  <button onClick={() => toggleMatriculaEnForm(est.id)} disabled={!editing}
+                                    className={`px-3 py-2 text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-40 ${mat ? "text-red-500 border border-red-200 hover:bg-red-50" : "text-white"}`}
+                                    style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
+                                    {mat ? "Quitar" : "Matricular"}
                                   </button>
-                                )}
-                                <button onClick={() => toggleMatriculaEnForm(est.id)} disabled={!editing}
-                                  className={`px-3 py-2 text-[9px] font-black uppercase tracking-wider transition-all disabled:opacity-40 ${mat ? "text-red-500 border border-red-200 hover:bg-red-50" : "text-white"}`}
-                                  style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
-                                  {mat ? "Quitar" : "Matricular"}
-                                </button>
+                                </div>
                               </div>
+                              {/* Fila certificado en tab matrículas */}
+                              {mat && completado && (
+                                <div className="px-3 pb-2.5 pt-2 border-t border-stone-100 bg-stone-50 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Award size={12} style={{ color: certUrl ? "#22c55e" : COLOR.naranja }} />
+                                    <span className="text-[9px] font-black uppercase tracking-wider"
+                                      style={{ color: certUrl ? "#22c55e" : COLOR.naranja }}>
+                                      {certUrl ? "Certificado listo" : "Sin certificado aún"}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {certUrl && (
+                                      <a href={certUrl} target="_blank" rel="noreferrer"
+                                        className="text-[9px] font-black uppercase tracking-wider underline"
+                                        style={{ color: COLOR.naranja }}>
+                                        Ver
+                                      </a>
+                                    )}
+                                    <label className="flex items-center gap-1 cursor-pointer px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-white"
+                                      style={{ backgroundColor: certUrl ? COLOR.marron : COLOR.rojo }}>
+                                      <Upload size={9} />
+                                      {certUrl ? "Reemplazar" : "Subir"}
+                                      <input type="file" accept=".pdf,image/*" className="hidden"
+                                        onChange={e => subirCertificadoEstudiante(e, editing.id, est.id)} />
+                                    </label>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1080,7 +1300,9 @@ export default function AdminCursosPage() {
                         Matrículas — <span style={{ color: COLOR.rojo }}>{showMatricula.titulo}</span>
                       </h2>
                     </div>
-                    <p className="text-[10px] text-stone-400 font-bold mt-0.5">{matriculados.length} matriculados · {estFiltradosRapido.length} resultado{estFiltradosRapido.length !== 1 ? "s" : ""}</p>
+                    <p className="text-[10px] text-stone-400 font-bold mt-0.5">
+                      {matriculados.length} matriculados · {estFiltradosRapido.length} resultado{estFiltradosRapido.length !== 1 ? "s" : ""}
+                    </p>
                   </div>
                   <button onClick={() => setShowMatricula(null)} className="text-stone-400 hover:text-slate-900"><X size={18} /></button>
                 </div>
@@ -1095,43 +1317,14 @@ export default function AdminCursosPage() {
                 <div className="overflow-y-auto flex-1 px-5 pb-2 space-y-2">
                   {estFiltradosRapido.length === 0
                     ? <p className="text-center text-[11px] text-stone-300 font-bold py-12">No hay estudiantes</p>
-                    : pagRapido.slice.map(est => {
-                      const mat = matriculados.includes(est.id);
-                      const prog = progresoMap[est.id] || {};
-                      const completado = prog[`completado_${showMatricula.id}`];
-                      const codigo = prog[`codigo_${showMatricula.id}`];
-                      return (
-                        <div key={est.id} className="flex items-center justify-between p-3 bg-white border border-stone-100 hover:border-stone-200 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[10px] font-black"
-                              style={{ backgroundColor: completado ? "#22c55e" : mat ? COLOR.rojo : "#e5e7eb" }}>
-                              {completado ? <CheckCircle size={15} /> : `${est.nombres?.[0]}${est.apellidos?.[0]}`}
-                            </div>
-                            <div>
-                              <p className="text-[12px] font-black text-slate-900">{est.nombres} {est.apellidos}</p>
-                              {codigo
-                                ? <p className="text-[9px] font-black tracking-wider" style={{ color: COLOR.naranja }}><Hash size={8} className="inline" />{codigo}</p>
-                                : <p className="text-[10px] text-stone-400">{est.email}</p>}
-                            </div>
-                          </div>
-                          <div className="flex gap-1.5">
-                            {mat && !completado && (
-                              <button onClick={() => marcarCompletadoAdmin(showMatricula.id, est.id, `${est.nombres} ${est.apellidos}`)}
-                                className="p-2 text-white flex items-center"
-                                style={{ backgroundColor: "#22c55e" }}
-                                title="Marcar como completado">
-                                <CheckCircle size={13} />
-                              </button>
-                            )}
-                            <button onClick={() => toggleMatricula(est.id)}
-                              className={`px-3 py-2 text-[9px] font-black uppercase tracking-wider transition-all ${mat ? "border border-red-200 text-red-500 hover:bg-red-50" : "text-white"}`}
-                              style={!mat ? { backgroundColor: COLOR.rojo } : {}}>
-                              {mat ? "Quitar" : "+"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    : pagRapido.slice.map(est => (
+                        <FilaEstudiante
+                          key={est.id}
+                          est={est}
+                          cursoId={showMatricula.id}
+                          enModal={true}
+                        />
+                      ))}
                   <Pager {...pagRapido} />
                 </div>
                 <div className="flex-shrink-0 p-4 border-t border-stone-100">

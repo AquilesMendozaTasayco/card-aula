@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -30,13 +30,11 @@ async function buscarCodigo(codigo) {
 }
 
 async function buscarCurso(cursoId) {
-  const { doc, getDoc } = await import("firebase/firestore");
   const snap = await getDoc(doc(db, "cursos", cursoId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 async function buscarEstudiante(uid) {
-  const { doc, getDoc } = await import("firebase/firestore");
   const snap = await getDoc(doc(db, "estudiantes", uid));
   return snap.exists() ? snap.data() : null;
 }
@@ -61,11 +59,24 @@ export default function ValidarCertificadoPage() {
         setEstado("invalido");
         return;
       }
+
       const [curso, estudiante] = await Promise.all([
         buscarCurso(found.cursoId),
         buscarEstudiante(found.uid),
       ]);
-      setResultado({ curso, estudiante, codigo: codigo.trim().toUpperCase() });
+
+      // Buscar certificado personal del estudiante
+      const progrSnap = await getDoc(doc(db, "estudiantes_progreso", found.uid));
+      const progrData = progrSnap.exists() ? progrSnap.data() : {};
+      const certPersonal = progrData[`certificado_${found.cursoId}`];
+
+      setResultado({
+        curso,
+        estudiante,
+        codigo: codigo.trim().toUpperCase(),
+        // Certificado personal tiene prioridad; si no, usa el del curso
+        urlCertificado: certPersonal || curso?.tituloFinal || null,
+      });
       setEstado("valido");
       setMostrarModal(true);
     } catch (err) {
@@ -108,15 +119,14 @@ export default function ValidarCertificadoPage() {
         <div className="p-8 md:p-12">
 
           <div className="text-center mb-10">
-            {/* LOGO EN LUGAR DEL ICONO */}
             <motion.div whileHover={{ scale: 1.05 }} className="inline-flex items-center justify-center mb-6">
-              <img 
-                src="/logo-11.png" 
-                alt="Logo Centro de Rendimiento" 
-                className="h-20 w-auto object-contain" 
+              <img
+                src="/logo-11.png"
+                alt="Logo Centro de Rendimiento"
+                className="h-20 w-auto object-contain"
               />
             </motion.div>
-            
+
             <h1 className="text-3xl font-black uppercase tracking-tight text-slate-900 leading-none">
               CONSULTA DE <span style={{ color: colorRojo }}>CERTIFICADO</span>
             </h1>
@@ -297,8 +307,8 @@ export default function ValidarCertificadoPage() {
 
                 {/* Acciones */}
                 <div className="space-y-2 pt-1">
-                  {resultado.curso?.tituloFinal ? (
-                    <a href={resultado.curso.tituloFinal} target="_blank" rel="noreferrer" download
+                  {resultado.urlCertificado ? (
+                    <a href={resultado.urlCertificado} target="_blank" rel="noreferrer" download
                       className="w-full flex items-center justify-center gap-2 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:translate-y-[-2px] shadow-lg"
                       style={{ backgroundColor: colorNaranja }}>
                       <Download size={16} /> Descargar Certificado
