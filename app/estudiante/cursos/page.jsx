@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { collection, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import Swal from "sweetalert2";
@@ -39,7 +39,7 @@ function CodigoCard({ codigo, cursoTitulo }) {
   return (
     <div className="border-2 border-yellow-300 bg-yellow-50 p-5 text-center">
       <GraduationCap size={28} className="mx-auto mb-2" style={{ color: COLOR.naranja }} />
-      <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1">Código de Finalización</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1">Código de Certificado</p>
       <p className="text-xl font-black tracking-[0.25em] my-3" style={{ color: COLOR.rojo }}>{codigo}</p>
       <p className="text-[10px] text-stone-400 mb-3">{cursoTitulo}</p>
       <button onClick={copiar}
@@ -47,6 +47,21 @@ function CodigoCard({ codigo, cursoTitulo }) {
         style={{ backgroundColor: copiado ? "#22c55e" : COLOR.naranja }}>
         {copiado ? <><CheckCircle size={12} /> Copiado</> : <><Copy size={12} /> Copiar código</>}
       </button>
+    </div>
+  );
+}
+
+// Tarjeta cuando el alumno terminó contenidos pero el admin aún no asignó código
+function EsperandoCodigoCard() {
+  return (
+    <div className="border-2 border-dashed border-stone-300 bg-stone-50 p-5 text-center">
+      <Clock size={28} className="mx-auto mb-2 text-stone-400" />
+      <p className="text-[11px] font-black uppercase tracking-widest text-stone-500 mb-1">
+        ¡Contenidos completados!
+      </p>
+      <p className="text-[11px] text-stone-400 leading-relaxed">
+        Tu código de certificado será asignado por el administrador en breve.
+      </p>
     </div>
   );
 }
@@ -91,34 +106,42 @@ export default function EstudianteCursosPage() {
     if (!uid) return;
     const yaCompleto = (progreso[cursoId] || []).includes(contenidoId);
     if (yaCompleto) return;
+
     const nuevo = { ...progreso, [cursoId]: [...(progreso[cursoId] || []), contenidoId] };
     setProgreso(nuevo);
+
     try {
       await updateDoc(doc(db, "estudiantes_progreso", uid), {
         [cursoId]: arrayUnion(contenidoId),
         updatedAt: serverTimestamp(),
       });
     } catch {
-      const { setDoc } = await import("firebase/firestore");
       await setDoc(doc(db, "estudiantes_progreso", uid), {
         [cursoId]: [contenidoId],
         updatedAt: serverTimestamp(),
       }, { merge: true });
     }
+
+    // Verificar si completó TODOS los contenidos
     const curso = cursos.find(c => c.id === cursoId);
-    if (curso) {
-      const totalContenidos = curso.contenidos?.length || 0;
-      const completados = nuevo[cursoId]?.length || 0;
-      if (totalContenidos > 0 && completados >= totalContenidos) {
-        Swal.fire({
-          icon: "success",
-          title: "🎉 ¡Has completado todos los contenidos!",
-          html: `<p class="text-sm text-gray-600">Cuando el administrador confirme tu finalización, recibirás tu código único.</p>`,
-          confirmButtonColor: COLOR.rojo,
-          confirmButtonText: "¡Genial!",
-          customClass: { popup: "rounded-2xl" },
-        });
-      }
+    if (!curso) return;
+
+    const totalContenidos = curso.contenidos?.length || 0;
+    const completados     = nuevo[cursoId]?.length || 0;
+
+    if (totalContenidos > 0 && completados >= totalContenidos) {
+      // ── Solo notificar — el código lo escribe el admin ──────────────
+      Swal.fire({
+        icon: "success",
+        title: "🎉 ¡Completaste todos los contenidos!",
+        html: `<p style="font-size:13px;color:#6b7280;line-height:1.6">
+          Tu código de certificado será asignado por el administrador en breve.<br/>
+          Podrás verlo aquí mismo cuando esté listo.
+        </p>`,
+        confirmButtonColor: COLOR.rojo,
+        confirmButtonText: "¡Entendido!",
+        customClass: { popup: "rounded-2xl" },
+      });
     }
   };
 
@@ -128,14 +151,20 @@ export default function EstudianteCursosPage() {
     return Math.round(((progreso[curso.id] || []).length / total) * 100);
   };
 
-  const esFinalizado = (curso) =>
-    progreso[`completado_${curso.id}`] === true || getPorcentaje(curso) === 100;
+  // Finalizado = el admin marcó completado_cursoId: true y asignó código
+  const esFinalizado    = (curso) => progreso[`completado_${curso.id}`] === true;
+
+  // Terminó contenidos pero admin aún no asignó código
+  const terminoContenidos = (curso) => {
+    const total = curso.contenidos?.length || 0;
+    return total > 0 && (progreso[curso.id] || []).length >= total && !esFinalizado(curso);
+  };
 
   const getCodigo = (cursoId) => progreso[`codigo_${cursoId}`] || null;
 
-  const cursosEnCurso    = cursos.filter(c => !esFinalizado(c));
+  const cursosEnCurso     = cursos.filter(c => !esFinalizado(c));
   const cursosFinalizados = cursos.filter(c => esFinalizado(c));
-  const cursosVista      = tab === "en_curso" ? cursosEnCurso : cursosFinalizados;
+  const cursosVista       = tab === "en_curso" ? cursosEnCurso : cursosFinalizados;
 
   if (loading) {
     return (
@@ -179,7 +208,7 @@ export default function EstudianteCursosPage() {
         {/* TABS */}
         <div className="flex gap-1 mb-8 border-b border-stone-200">
           {[
-            { id: "en_curso",    label: `En Curso (${cursosEnCurso.length})`,      icon: BarChart3 },
+            { id: "en_curso",    label: `En Curso (${cursosEnCurso.length})`,       icon: BarChart3 },
             { id: "finalizados", label: `Finalizados (${cursosFinalizados.length})`, icon: CheckCircle },
           ].map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setTab(id)}
@@ -203,9 +232,10 @@ export default function EstudianteCursosPage() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {cursosVista.map((curso, idx) => {
-              const pct       = getPorcentaje(curso);
+              const pct        = getPorcentaje(curso);
               const finalizado = esFinalizado(curso);
-              const codigo    = getCodigo(curso.id);
+              const termino    = terminoContenidos(curso);
+              const codigo     = getCodigo(curso.id);
               return (
                 <motion.div key={curso.id} layout
                   initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
@@ -222,6 +252,11 @@ export default function EstudianteCursosPage() {
                         <div className="bg-green-500 rounded-full p-3"><CheckCircle size={24} className="text-white" /></div>
                       </div>
                     )}
+                    {termino && (
+                      <div className="absolute inset-0 bg-amber-900/30 flex items-center justify-center">
+                        <div className="bg-amber-400 rounded-full p-3"><Clock size={22} className="text-white" /></div>
+                      </div>
+                    )}
                   </div>
                   <div className="p-5">
                     <h3 className="text-[13px] font-black text-slate-900 leading-tight mb-3 line-clamp-2">{curso.titulo}</h3>
@@ -231,7 +266,14 @@ export default function EstudianteCursosPage() {
                         <p className="text-[13px] font-black tracking-[0.2em]" style={{ color: COLOR.rojo }}>{codigo}</p>
                       </div>
                     )}
-                    {!finalizado && (
+                    {termino && (
+                      <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">
+                          Esperando código del administrador…
+                        </p>
+                      </div>
+                    )}
+                    {!finalizado && !termino && (
                       <div className="mb-3">
                         <div className="flex justify-between text-[9px] font-black uppercase tracking-wider mb-1.5">
                           <span className="text-stone-400">Progreso</span>
@@ -252,8 +294,12 @@ export default function EstudianteCursosPage() {
                   </div>
                   <div className="px-5 pb-5">
                     <button className="w-full flex items-center justify-center gap-2 py-3 text-[10px] font-black uppercase tracking-wider text-white transition-all"
-                      style={{ backgroundColor: finalizado ? "#22c55e" : COLOR.rojo }}>
-                      {finalizado ? <><GraduationCap size={13} /> Ver Detalle</> : <><PlayCircle size={13} /> Continuar</>}
+                      style={{ backgroundColor: finalizado ? "#22c55e" : termino ? "#f59e0b" : COLOR.rojo }}>
+                      {finalizado
+                        ? <><GraduationCap size={13} /> Ver Detalle</>
+                        : termino
+                          ? <><Clock size={13} /> Esperando código</>
+                          : <><PlayCircle size={13} /> Continuar</>}
                       <ChevronRight size={13} />
                     </button>
                   </div>
@@ -301,6 +347,13 @@ export default function EstudianteCursosPage() {
                         <CheckCircle size={16} className="text-green-500" />
                         <span className="text-[11px] font-black uppercase tracking-wider text-green-600">Curso Finalizado</span>
                       </div>
+                    ) : terminoContenidos(cursoActivo) ? (
+                      <div className="flex items-center gap-2">
+                        <Clock size={16} className="text-amber-500" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-amber-600">
+                          Contenidos completados — esperando código del administrador
+                        </span>
+                      </div>
                     ) : (
                       <>
                         <div className="flex justify-between text-[10px] font-black uppercase tracking-wider mb-2">
@@ -317,10 +370,17 @@ export default function EstudianteCursosPage() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
-                  {/* Código de finalización */}
+                  {/* Código asignado por el admin */}
                   {esFinalizado(cursoActivo) && getCodigo(cursoActivo.id) && (
                     <div className="p-6 pb-0">
                       <CodigoCard codigo={getCodigo(cursoActivo.id)} cursoTitulo={cursoActivo.titulo} />
+                    </div>
+                  )}
+
+                  {/* Esperando que el admin asigne el código */}
+                  {terminoContenidos(cursoActivo) && (
+                    <div className="p-6 pb-0">
+                      <EsperandoCodigoCard />
                     </div>
                   )}
 
@@ -419,7 +479,6 @@ export default function EstudianteCursosPage() {
                           </div>
                         ) : null}
 
-                        {/* ── Adjuntos del contenido activo ── */}
                         {(contenidoActivo.adjuntos || []).length > 0 && (
                           <div className="px-4 py-3 bg-stone-50 border-t border-stone-100 space-y-2">
                             <p className="text-[9px] font-black uppercase tracking-widest text-stone-400 mb-2">
@@ -433,9 +492,7 @@ export default function EstudianteCursosPage() {
                                   <Paperclip size={13} style={{ color: COLOR.naranja }} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-[11px] font-black text-slate-900 truncate">
-                                    {adj.titulo || adj.nombre}
-                                  </p>
+                                  <p className="text-[11px] font-black text-slate-900 truncate">{adj.titulo || adj.nombre}</p>
                                   {adj.titulo && adj.nombre !== adj.titulo && (
                                     <p className="text-[9px] text-stone-400 truncate">{adj.nombre}</p>
                                   )}
@@ -499,16 +556,13 @@ export default function EstudianteCursosPage() {
                             {completado && <span className="text-[9px] font-black text-green-500 uppercase flex-shrink-0">✓</span>}
                           </div>
 
-                          {/* Adjuntos visibles en lista cuando el ítem NO está activo */}
                           {tieneAdjuntos && !activo && (
                             <div className="px-3 pb-3 space-y-1" onClick={e => e.stopPropagation()}>
                               {c.adjuntos.map((adj, ai) => (
                                 <a key={adj.id || ai} href={adj.url} target="_blank" rel="noreferrer"
                                   className="flex items-center gap-2 px-2.5 py-1.5 bg-white border border-stone-100 hover:border-stone-300 transition-all group/adj2 rounded">
                                   <Paperclip size={10} style={{ color: COLOR.naranja }} className="flex-shrink-0" />
-                                  <span className="text-[10px] font-bold text-slate-700 truncate flex-1">
-                                    {adj.titulo || adj.nombre}
-                                  </span>
+                                  <span className="text-[10px] font-bold text-slate-700 truncate flex-1">{adj.titulo || adj.nombre}</span>
                                   <Download size={10} className="text-stone-300 group-hover/adj2:text-stone-500 flex-shrink-0 transition-colors" />
                                 </a>
                               ))}

@@ -17,17 +17,11 @@ const db   = getFirestore(app);
 
 // ─── Datos de los 2 usuarios a crear ─────────────────────────────────────────
 const usuarios = [
-  {
-    email:    "dweb@emocion.pe",
-    password: "emocion2026",
-    nombre:   "Administrador Principal",
+    {
+    email:    "administrador@cardperu.com",
+    password: "Cp.26%H",
+    nombre:   "Administrador",
     rol:      "admin",
-  },
-  {
-    email:    "estudiante@gmail.com",
-    password: "emocion2026",
-    nombre:   "Estudiante Demo",
-    rol:      "estudiante",
   },
 ];
 
