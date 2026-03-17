@@ -25,13 +25,6 @@ const CONTENIDO_VACIO = { tipo: "video", titulo: "", url: "", adjuntos: [] };
 const CLASE_VACIA     = { titulo: "", descripcion: "", fecha: "", hora: "", materiales: [], videosClase: [], archivosClase: [] };
 const ICON_TIPO       = { video: Youtube, pdf: FileText, enlace: LinkIcon, archivo: File };
 
-function generarCodigo(cursoId, uid) {
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-  const c    = (cursoId || "").slice(-4).toUpperCase();
-  const u    = (uid    || "").slice(-4).toUpperCase();
-  return `${c}-${u}-${rand}`;
-}
-
 function usePaginacion(items, pageSize = PAGE_SIZE) {
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(items.length / pageSize);
@@ -377,38 +370,78 @@ export default function AdminCursosPage() {
     }
   };
 
+  // ── Marcar completado con código MANUAL ───────────────────────────────
   const marcarCompletadoAdmin = async (cursoId, estId, estNombre) => {
-    const res = await Swal.fire({
-      title: `¿Marcar como completado?`,
-      html: `<p style="font-size:13px;color:#6b7280">Estudiante: <strong>${estNombre}</strong><br/>Se generará un código único de certificado.</p>`,
-      icon: "question", showCancelButton: true,
-      confirmButtonColor: COLOR.rojo, cancelButtonColor: "#6b7280",
-      confirmButtonText: "Sí, marcar", cancelButtonText: "Cancelar",
+    const { value: codigoManual, isConfirmed } = await Swal.fire({
+      title: "Marcar como completado",
+      html: `
+        <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
+          Estudiante: <strong>${estNombre}</strong>
+        </p>
+        <label style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;display:block;margin-bottom:6px">
+          Código de certificado
+        </label>
+        <input
+          id="swal-codigo"
+          placeholder="Ej: EXCEL-BÁSICO-2024"
+          style="width:100%;padding:10px 12px;border:2px solid #e5e7eb;font-size:14px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;outline:none;font-family:monospace"
+          maxlength="40"
+        />
+        <p style="font-size:10px;color:#a8a29e;margin-top:6px">
+          Escribe el código que recibirá el estudiante en su certificado.
+        </p>
+      `,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: COLOR.rojo,
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Guardar",
+      cancelButtonText: "Cancelar",
+      didOpen: () => {
+        // Forzar uppercase mientras escribe
+        const input = document.getElementById("swal-codigo");
+        if (input) input.addEventListener("input", () => { input.value = input.value.toUpperCase(); });
+      },
+      preConfirm: () => {
+        const val = document.getElementById("swal-codigo")?.value?.trim().toUpperCase();
+        if (!val) {
+          Swal.showValidationMessage("El código no puede estar vacío");
+          return false;
+        }
+        return val;
+      },
     });
-    if (!res.isConfirmed) return;
-    const codigo = generarCodigo(cursoId, estId);
+
+    if (!isConfirmed || !codigoManual) return;
+
     try {
       await setDoc(doc(db, "estudiantes_progreso", estId), {
         [`completado_${cursoId}`]: true,
-        [`codigo_${cursoId}`]: codigo,
+        [`codigo_${cursoId}`]: codigoManual,
         updatedAt: serverTimestamp(),
       }, { merge: true });
+
       setProgresoMap(prev => ({
         ...prev,
         [estId]: {
           ...(prev[estId] || {}),
           [`completado_${cursoId}`]: true,
-          [`codigo_${cursoId}`]: codigo,
+          [`codigo_${cursoId}`]: codigoManual,
         },
       }));
+
       Swal.fire({
         icon: "success",
         title: "Curso marcado como completado",
-        html: `<p style="font-size:13px;color:#6b7280">Código generado:</p>
-               <p style="font-size:18px;font-weight:900;letter-spacing:0.2em;margin-top:8px;color:#EF3340">${codigo}</p>`,
+        html: `
+          <p style="font-size:13px;color:#6b7280">Código asignado:</p>
+          <p style="font-size:18px;font-weight:900;letter-spacing:0.2em;margin-top:8px;color:#EF3340">${codigoManual}</p>
+        `,
         confirmButtonColor: COLOR.rojo,
       });
-    } catch { Swal.fire({ icon: "error", title: "Error al marcar", confirmButtonColor: COLOR.rojo }); }
+    } catch {
+      Swal.fire({ icon: "error", title: "Error al marcar", confirmButtonColor: COLOR.rojo });
+    }
   };
 
   const toggleMatriculaEnForm = async (estId) => {
@@ -454,7 +487,6 @@ export default function AdminCursosPage() {
 
     return (
       <div className="border border-stone-100 bg-white overflow-hidden">
-        {/* Fila principal */}
         <div className="flex items-center justify-between p-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[10px] font-black"
@@ -474,7 +506,6 @@ export default function AdminCursosPage() {
           </div>
 
           <div className="flex gap-1.5 flex-shrink-0">
-            {/* Botón marcar completado */}
             {mat && !completado && (
               <button
                 onClick={() => marcarCompletadoAdmin(cursoId, est.id, `${est.nombres} ${est.apellidos}`)}
@@ -484,13 +515,11 @@ export default function AdminCursosPage() {
                 <CheckCircle size={13} />
               </button>
             )}
-            {/* Badge finalizado */}
             {completado && (
               <span className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-green-600 border border-green-200 bg-green-50 flex items-center gap-1">
                 <GraduationCap size={11} /> Fin.
               </span>
             )}
-            {/* Botón matricular/quitar (solo en modal rápido) */}
             {enModal && (
               <button
                 onClick={() => toggleMatricula(est.id)}
@@ -504,7 +533,6 @@ export default function AdminCursosPage() {
           </div>
         </div>
 
-        {/* Fila certificado — solo si completó */}
         {completado && (
           <div className="px-3 pb-2.5 pt-2 border-t border-stone-100 bg-stone-50 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -601,7 +629,6 @@ export default function AdminCursosPage() {
                   <span className={`absolute top-3 left-3 px-2 py-1 text-[9px] font-black uppercase tracking-tighter shadow-sm ${curso.activo ? "bg-green-500 text-white" : "bg-stone-400 text-white"}`}>
                     {curso.activo ? "Activo" : "Inactivo"}
                   </span>
-                  {/* Badge si tiene certificado de curso */}
                   {curso.tituloFinal && (
                     <span className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase tracking-tighter bg-amber-500 text-white shadow-sm">
                       <Award size={10} /> Cert.
@@ -658,9 +685,6 @@ export default function AdminCursosPage() {
                 <div className="relative h-44 bg-stone-900 flex-shrink-0 overflow-hidden">
                   {showDetalle.portadaUrl && <img src={showDetalle.portadaUrl} className="h-full w-full object-cover opacity-60" alt="" />}
                   <div className="absolute inset-0 p-6 flex flex-col justify-end bg-gradient-to-t from-black/60">
-                    <span className={`self-start px-2 py-1 text-[9px] font-black uppercase tracking-tighter mb-2 ${showDetalle.activo ? "bg-green-500 text-white" : "bg-stone-400 text-white"}`}>
-                      {showDetalle.activo ? "Activo" : "Inactivo"}
-                    </span>
                     <h2 className="text-xl font-black text-white leading-tight">{showDetalle.titulo}</h2>
                   </div>
                   <button onClick={() => setShowDetalle(null)}
@@ -669,10 +693,6 @@ export default function AdminCursosPage() {
                   </button>
                 </div>
                 <div className="overflow-y-auto flex-1 p-6 space-y-6">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">Descripción</p>
-                    <p className="text-sm text-slate-700 leading-relaxed">{showDetalle.descripcion || "—"}</p>
-                  </div>
                   <div className="grid grid-cols-3 gap-3">
                     {[
                       { label: "Recursos",     value: showDetalle.contenidos?.length || 0, icon: PlayCircle },
@@ -686,98 +706,6 @@ export default function AdminCursosPage() {
                       </div>
                     ))}
                   </div>
-
-                  {/* Certificado del curso */}
-                  <div className="p-4 bg-stone-50 border border-stone-100">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Award size={14} style={{ color: showDetalle.tituloFinal ? "#22c55e" : COLOR.naranja }} />
-                        <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Certificado del curso</p>
-                      </div>
-                      {showDetalle.tituloFinal && (
-                        <a href={showDetalle.tituloFinal} target="_blank" rel="noreferrer"
-                          className="text-[9px] font-black uppercase tracking-wider underline"
-                          style={{ color: COLOR.naranja }}>
-                          Ver certificado
-                        </a>
-                      )}
-                    </div>
-                    {!showDetalle.tituloFinal && (
-                      <p className="text-[10px] text-stone-400 mt-1">Sin certificado general subido aún</p>
-                    )}
-                  </div>
-
-                  {/* Contenidos */}
-                  {(showDetalle.contenidos || []).length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">Contenidos</p>
-                      <div className="space-y-2">
-                        {showDetalle.contenidos.map((c, i) => {
-                          const Icon = ICON_TIPO[c.tipo] || Paperclip;
-                          return (
-                            <div key={c.id || i} className="bg-stone-50 border border-stone-100 overflow-hidden">
-                              <div className="flex items-center gap-3 p-2.5">
-                                <Icon size={13} style={{ color: COLOR.naranja }} />
-                                <span className="text-[12px] font-bold text-slate-700 flex-1 truncate">{c.titulo}</span>
-                                <span className="text-[9px] font-black uppercase text-stone-400">{c.tipo}</span>
-                                {(c.adjuntos || []).length > 0 && (
-                                  <span className="flex items-center gap-1 text-[9px] font-black text-stone-400">
-                                    <Paperclip size={9} />{c.adjuntos.length}
-                                  </span>
-                                )}
-                              </div>
-                              {(c.adjuntos || []).length > 0 && (
-                                <div className="px-3 pb-2 space-y-1 border-t border-stone-100">
-                                  {c.adjuntos.map((adj, ai) => (
-                                    <a key={adj.id || ai} href={adj.url} target="_blank" rel="noreferrer"
-                                      className="flex items-center gap-2 py-1 text-[10px] font-bold text-stone-500 hover:underline">
-                                      <FileText size={10} style={{ color: COLOR.naranja }} />
-                                      {adj.titulo || adj.nombre}
-                                    </a>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Clases */}
-                  {(showDetalle.clases || []).length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">Clases Programadas</p>
-                      <div className="space-y-2">
-                        {[...(showDetalle.clases || [])].sort((a, b) => {
-                          const da  = a.fecha ? new Date(`${a.fecha}T${a.hora || "00:00"}`) : new Date(0);
-                          const db_ = b.fecha ? new Date(`${b.fecha}T${b.hora || "00:00"}`) : new Date(0);
-                          return da - db_;
-                        }).map((clase, i) => (
-                          <div key={clase.id || i} className="flex items-start gap-3 p-3 bg-stone-50 border border-stone-100">
-                            <div className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
-                              style={{ backgroundColor: COLOR.naranja }}>{i + 1}</div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[12px] font-black text-slate-900">{clase.titulo}</p>
-                              {clase.fecha && (
-                                <p className="text-[10px] text-stone-400 font-bold mt-0.5 flex items-center gap-1">
-                                  <CalendarDays size={10} /> {formatFechaClase(clase.fecha, clase.hora)}
-                                </p>
-                              )}
-                              {clase.descripcion && <p className="text-[11px] text-stone-500 mt-1">{clase.descripcion}</p>}
-                              <div className="flex gap-3 mt-1 text-[9px] text-stone-400 font-bold">
-                                {(clase.videosClase || []).length > 0 && <span className="flex items-center gap-1"><Youtube size={10} /> {clase.videosClase.length}</span>}
-                                {(clase.archivosClase || []).length > 0 && <span className="flex items-center gap-1"><FileText size={10} /> {clase.archivosClase.length}</span>}
-                                {(clase.materiales || []).length > 0 && <span className="flex items-center gap-1"><Paperclip size={10} /> {clase.materiales.length}</span>}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Estudiantes con certificados */}
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3">
                       Estudiantes Matriculados ({(showDetalle.matriculados || []).length})
@@ -789,12 +717,7 @@ export default function AdminCursosPage() {
                         {estudiantes
                           .filter(e => (showDetalle.matriculados || []).includes(e.id))
                           .map(est => (
-                            <FilaEstudiante
-                              key={est.id}
-                              est={est}
-                              cursoId={showDetalle.id}
-                              enModal={false}
-                            />
+                            <FilaEstudiante key={est.id} est={est} cursoId={showDetalle.id} enModal={false} />
                           ))}
                       </div>
                     )}
@@ -866,8 +789,6 @@ export default function AdminCursosPage() {
                         <input type="checkbox" checked={form.activo} onChange={e => setForm(p => ({ ...p, activo: e.target.checked }))} className="h-4 w-4" />
                         <label className="text-[10px] font-black uppercase tracking-widest text-stone-600">Curso activo (visible para estudiantes)</label>
                       </div>
-
-                      {/* Portada */}
                       <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3 block">Imagen de Portada</label>
                         {form.portadaUrl ? (
@@ -887,16 +808,9 @@ export default function AdminCursosPage() {
                           </label>
                         )}
                       </div>
-
-                      {/* ── CERTIFICADO DEL CURSO ── */}
                       <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1 block">
-                          Certificado General del Curso
-                        </label>
-                        <p className="text-[10px] text-stone-400 mb-3 leading-relaxed">
-                          PDF o imagen que aplica a <strong>todos</strong> los estudiantes que completen este curso.
-                          Si un estudiante tiene su propio certificado, ese tendrá prioridad.
-                        </p>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1 block">Certificado General del Curso</label>
+                        <p className="text-[10px] text-stone-400 mb-3 leading-relaxed">PDF o imagen que aplica a todos los estudiantes que completen este curso.</p>
                         {form.tituloFinal ? (
                           <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100">
                             <div className="flex items-center gap-2">
@@ -904,28 +818,15 @@ export default function AdminCursosPage() {
                               <span className="text-[11px] font-black text-green-700">Certificado cargado</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <a href={form.tituloFinal} target="_blank" rel="noreferrer"
-                                className="text-[9px] font-black uppercase tracking-wider text-green-600 underline">
-                                Ver
-                              </a>
-                              <button onClick={() => setForm(p => ({ ...p, tituloFinal: "" }))}
-                                className="text-[9px] font-black uppercase tracking-wider text-red-400 hover:text-red-600">
-                                Quitar
-                              </button>
+                              <a href={form.tituloFinal} target="_blank" rel="noreferrer" className="text-[9px] font-black uppercase tracking-wider text-green-600 underline">Ver</a>
+                              <button onClick={() => setForm(p => ({ ...p, tituloFinal: "" }))} className="text-[9px] font-black uppercase tracking-wider text-red-400 hover:text-red-600">Quitar</button>
                             </div>
                           </div>
                         ) : (
                           <label className="flex h-24 cursor-pointer items-center justify-center gap-3 border-2 border-dashed border-stone-200 bg-stone-50 hover:bg-stone-100 transition-all">
                             {subiendoCertificado
-                              ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
-                                  style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
-                              : <>
-                                  <Award size={20} className="text-stone-300" />
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">
-                                    Subir certificado (PDF / imagen)
-                                  </span>
-                                </>
-                            }
+                              ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} />
+                              : <><Award size={20} className="text-stone-300" /><span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Subir certificado (PDF / imagen)</span></>}
                             <input type="file" accept=".pdf,image/*" onChange={subirCertificadoCurso} className="hidden" />
                           </label>
                         )}
@@ -977,9 +878,7 @@ export default function AdminCursosPage() {
                         )}
                         <div className="border-t border-stone-200 pt-4 space-y-3">
                           <div className="flex items-center justify-between">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">
-                              Archivos adjuntos ({(nuevoContenido.adjuntos || []).length}) — opcional
-                            </p>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Archivos adjuntos ({(nuevoContenido.adjuntos || []).length}) — opcional</p>
                             <label className="flex items-center gap-1.5 cursor-pointer text-[9px] font-black uppercase tracking-wider px-3 py-1.5 border border-stone-200 bg-white hover:bg-stone-50 transition-colors text-stone-500">
                               {subiendoAdjunto ? <div className="h-3 w-3 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: `${COLOR.rojo} transparent ${COLOR.rojo} ${COLOR.rojo}` }} /> : <Paperclip size={11} />}
                               Adjuntar archivos
@@ -1117,15 +1016,13 @@ export default function AdminCursosPage() {
                                         <Plus size={10} /> Agregar
                                       </button>
                                     </div>
-                                    {(clase.videosClase || []).length === 0
-                                      ? <p className="text-[9px] text-stone-300 font-bold">Sin videos</p>
-                                      : (clase.videosClase || []).map((v, vi) => (
-                                        <div key={vi} className="flex items-center gap-2 py-1.5 pl-1">
-                                          <Youtube size={12} style={{ color: COLOR.rojo }} />
-                                          <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{v.titulo}</span>
-                                          <button onClick={() => quitarVideoClase(realIdx, vi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
-                                        </div>
-                                      ))}
+                                    {(clase.videosClase || []).map((v, vi) => (
+                                      <div key={vi} className="flex items-center gap-2 py-1.5 pl-1">
+                                        <Youtube size={12} style={{ color: COLOR.rojo }} />
+                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{v.titulo}</span>
+                                        <button onClick={() => quitarVideoClase(realIdx, vi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+                                      </div>
+                                    ))}
                                   </div>
                                   <div>
                                     <div className="flex items-center justify-between mb-1.5">
@@ -1136,15 +1033,13 @@ export default function AdminCursosPage() {
                                         <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" onChange={e => subirArchivoClase(e, realIdx)} className="hidden" />
                                       </label>
                                     </div>
-                                    {(clase.archivosClase || []).length === 0
-                                      ? <p className="text-[9px] text-stone-300 font-bold">Sin archivos</p>
-                                      : (clase.archivosClase || []).map((a, ai) => (
-                                        <div key={ai} className="flex items-center gap-2 py-1.5 pl-1">
-                                          <FileText size={12} style={{ color: COLOR.naranja }} />
-                                          <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{a.nombre}</span>
-                                          <button onClick={() => quitarArchivoClase(realIdx, ai)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
-                                        </div>
-                                      ))}
+                                    {(clase.archivosClase || []).map((a, ai) => (
+                                      <div key={ai} className="flex items-center gap-2 py-1.5 pl-1">
+                                        <FileText size={12} style={{ color: COLOR.naranja }} />
+                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{a.nombre}</span>
+                                        <button onClick={() => quitarArchivoClase(realIdx, ai)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+                                      </div>
+                                    ))}
                                   </div>
                                   <div>
                                     <div className="flex items-center justify-between mb-1.5">
@@ -1155,15 +1050,13 @@ export default function AdminCursosPage() {
                                         <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" onChange={e => subirMaterialClase(e, realIdx)} className="hidden" />
                                       </label>
                                     </div>
-                                    {(clase.materiales || []).length === 0
-                                      ? <p className="text-[9px] text-stone-300 font-bold">Sin material</p>
-                                      : (clase.materiales || []).map((mat, mi) => (
-                                        <div key={mi} className="flex items-center gap-2 py-1.5 pl-1">
-                                          <Paperclip size={12} className="text-stone-400" />
-                                          <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{mat.nombre}</span>
-                                          <button onClick={() => quitarMaterialClase(realIdx, mi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
-                                        </div>
-                                      ))}
+                                    {(clase.materiales || []).map((mat, mi) => (
+                                      <div key={mi} className="flex items-center gap-2 py-1.5 pl-1">
+                                        <Paperclip size={12} className="text-stone-400" />
+                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1">{mat.nombre}</span>
+                                        <button onClick={() => quitarMaterialClase(realIdx, mi)} className="p-1 hover:text-red-500 text-stone-300"><X size={11} /></button>
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               </div>
@@ -1188,7 +1081,7 @@ export default function AdminCursosPage() {
                           className="w-full pl-9 pr-4 py-2.5 text-[11px] font-medium bg-white border border-stone-200 outline-none focus:border-red-400 transition-all" />
                       </div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-stone-400">
-                        {(form.matriculados || []).length} matriculado{(form.matriculados || []).length !== 1 ? "s" : ""} · {estFiltradosModal.length} resultado{estFiltradosModal.length !== 1 ? "s" : ""}
+                        {(form.matriculados || []).length} matriculado{(form.matriculados || []).length !== 1 ? "s" : ""}
                       </p>
                       {estFiltradosModal.length === 0
                         ? <p className="text-center text-[11px] text-stone-300 font-bold py-8">No hay estudiantes</p>
@@ -1228,30 +1121,21 @@ export default function AdminCursosPage() {
                                   </button>
                                 </div>
                               </div>
-                              {/* Fila certificado en tab matrículas */}
                               {mat && completado && (
                                 <div className="px-3 pb-2.5 pt-2 border-t border-stone-100 bg-stone-50 flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-1.5">
                                     <Award size={12} style={{ color: certUrl ? "#22c55e" : COLOR.naranja }} />
-                                    <span className="text-[9px] font-black uppercase tracking-wider"
-                                      style={{ color: certUrl ? "#22c55e" : COLOR.naranja }}>
+                                    <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: certUrl ? "#22c55e" : COLOR.naranja }}>
                                       {certUrl ? "Certificado listo" : "Sin certificado aún"}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {certUrl && (
-                                      <a href={certUrl} target="_blank" rel="noreferrer"
-                                        className="text-[9px] font-black uppercase tracking-wider underline"
-                                        style={{ color: COLOR.naranja }}>
-                                        Ver
-                                      </a>
-                                    )}
+                                    {certUrl && <a href={certUrl} target="_blank" rel="noreferrer" className="text-[9px] font-black uppercase tracking-wider underline" style={{ color: COLOR.naranja }}>Ver</a>}
                                     <label className="flex items-center gap-1 cursor-pointer px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-white"
                                       style={{ backgroundColor: certUrl ? COLOR.marron : COLOR.rojo }}>
                                       <Upload size={9} />
                                       {certUrl ? "Reemplazar" : "Subir"}
-                                      <input type="file" accept=".pdf,image/*" className="hidden"
-                                        onChange={e => subirCertificadoEstudiante(e, editing.id, est.id)} />
+                                      <input type="file" accept=".pdf,image/*" className="hidden" onChange={e => subirCertificadoEstudiante(e, editing.id, est.id)} />
                                     </label>
                                   </div>
                                 </div>
@@ -1318,12 +1202,7 @@ export default function AdminCursosPage() {
                   {estFiltradosRapido.length === 0
                     ? <p className="text-center text-[11px] text-stone-300 font-bold py-12">No hay estudiantes</p>
                     : pagRapido.slice.map(est => (
-                        <FilaEstudiante
-                          key={est.id}
-                          est={est}
-                          cursoId={showMatricula.id}
-                          enModal={true}
-                        />
+                        <FilaEstudiante key={est.id} est={est} cursoId={showMatricula.id} enModal={true} />
                       ))}
                   <Pager {...pagRapido} />
                 </div>
