@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { obtenerCertificado } from "@/lib/certificados";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Hash, ChevronRight, Loader2, Award, CheckCircle,
@@ -54,6 +55,36 @@ export default function ValidarCertificadoPage() {
     setResultado(null);
 
     try {
+      const codigoNorm = codigo.trim().toUpperCase();
+
+      // 1) Nueva colección "certificados": lectura directa por ID (= código).
+      // No depende de que el curso o el alumno sigan existiendo (snapshots).
+      try {
+        const cert = await obtenerCertificado(codigoNorm);
+        if (cert) {
+          if (cert.estado !== "activo") {
+            setEstado("invalido");
+            return;
+          }
+          const [cursoVivo, estVivo] = await Promise.all([
+            buscarCurso(cert.cursoId),
+            buscarEstudiante(cert.estudianteUid),
+          ]);
+          setResultado({
+            curso: cursoVivo || { id: cert.cursoId, titulo: cert.cursoTitulo || "Curso" },
+            estudiante: estVivo || { nombres: cert.estudianteNombre || "", apellidos: "", email: "" },
+            codigo: cert.codigo,
+            urlCertificado: cert.url || cursoVivo?.tituloFinal || null,
+          });
+          setEstado("valido");
+          setMostrarModal(true);
+          return;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      // 2) Legado: certificados emitidos antes de la migración.
       const found = await buscarCodigo(codigo);
       if (!found.encontrado) {
         setEstado("invalido");

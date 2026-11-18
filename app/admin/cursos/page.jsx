@@ -8,6 +8,10 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
+import {
+  validarCodigo, prefijoCurso, sugerirSiguiente, codigoEnUso,
+  emitirCertificado, vincularPdf, certificadoDe, contarPorCurso,
+} from "@/lib/certificados";
 import Swal from "sweetalert2";
 import {
   Plus, Pencil, Trash2, X, Save, BookOpen, Search,
@@ -135,6 +139,11 @@ export default function AdminCursosPage() {
         [`certificado_${cursoId}`]: url,
         updatedAt: serverTimestamp(),
       }, { merge: true });
+      // Vincular al doc de certificados (si ya fue emitido)
+      try {
+        const cert = await certificadoDe(cursoId, estId);
+        if (cert) await vincularPdf(cert.codigo, url);
+      } catch {}
       setProgresoMap(prev => ({
         ...prev,
         [estId]: { ...(prev[estId] || {}), [`certificado_${cursoId}`]: url },
@@ -334,6 +343,20 @@ export default function AdminCursosPage() {
   };
 
   const eliminar = async (curso) => {
+    // Blindaje: un curso con certificados emitidos no se puede eliminar
+    // (los certificados persisten en su propia colección con snapshots).
+    let nCert = 0;
+    try { nCert = await contarPorCurso(curso.id); } catch {}
+    if (nCert > 0) {
+      await Swal.fire({
+        icon: "error",
+        title: "No se puede eliminar",
+        html: `Este curso tiene <strong>${nCert}</strong> certificado(s) emitido(s).<br/>Los certificados son históricos y no se borran con el curso.<br/>Revoca los certificados primero si igual deseas eliminarlo.`,
+        confirmButtonColor: COLOR.rojo,
+        customClass: { popup: "rounded-2xl" },
+      });
+      return;
+    }
     const res = await Swal.fire({
       title: `¿Eliminar "${curso.titulo}"?`, text: "Esta acción no se puede deshacer.",
       icon: "warning", showCancelButton: true,
@@ -370,25 +393,38 @@ export default function AdminCursosPage() {
     }
   };
 
-  // ── Marcar completado con código MANUAL ───────────────────────────────
+  // ── Marcar completado con código MANUAL (único por alumno) ─────────
+  // El doc vive en "certificados" (ID = código) con snapshots: sobrevive
+  // al borrado/reinicio del curso. Espejo en progreso para el estudiante.
   const marcarCompletadoAdmin = async (cursoId, estId, estNombre) => {
+    const curso = cursos.find(c => c.id === cursoId);
+    const progActual = progresoMap[estId] || {};
+    const codigoPrevio = progActual[`codigo_${cursoId}`] || "";
+    const estDni = estudiantes.find(e => e.id === estId)?.dni || progActual.dni || "";
+    const pref = prefijoCurso(curso?.titulo);
+    let sugerido = codigoPrevio;
+    if (!sugerido) {
+      try { sugerido = await sugerirSiguiente(pref); }
+      catch { sugerido = `${pref}001`; }
+    }
     const { value: codigoManual, isConfirmed } = await Swal.fire({
-      title: "Marcar como completado",
+      title: codigoPrevio ? "Reasignar código" : "Marcar como completado",
       html: `
         <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
           Estudiante: <strong>${estNombre}</strong>
         </p>
         <label style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;display:block;margin-bottom:6px">
-          Código de certificado
+          Código de certificado (único por alumno)
         </label>
         <input
           id="swal-codigo"
-          placeholder="Ej: EXCEL-BÁSICO-2024"
+          value="${sugerido}"
+          placeholder="Ej: ${pref}001"
           style="width:100%;padding:10px 12px;border:2px solid #e5e7eb;font-size:14px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;outline:none;font-family:monospace"
           maxlength="40"
         />
         <p style="font-size:10px;color:#a8a29e;margin-top:6px">
-          Escribe el código que recibirá el estudiante en su certificado.
+          Letras, números, guion (-) y guion bajo (_). Se verifica que no esté en uso.
         </p>
       `,
       icon: "question",
@@ -400,47 +436,70 @@ export default function AdminCursosPage() {
       didOpen: () => {
         // Forzar uppercase mientras escribe
         const input = document.getElementById("swal-codigo");
-        if (input) input.addEventListener("input", () => { input.value = input.value.toUpperCase(); });
+        if (input) {
+          input.focus(); input.select();
+          input.addEventListener("input", () => { input.value = input.value.toUpperCase(); });
+        }
       },
-      preConfirm: () => {
-        const val = document.getElementById("swal-codigo")?.value?.trim().toUpperCase();
-        if (!val) {
-          Swal.showValidationMessage("El código no puede estar vacío");
+      preConfirm: async () => {
+        const val = document.getElementById("swal-codigo")?.value || "";
+        const v = validarCodigo(val);
+        if (!v.ok) {
+          Swal.showValidationMessage(v.error);
           return false;
         }
-        return val;
+        try {
+          const enUso = await codigoEnUso(v.codigo, codigoPrevio);
+          if (enUso) {
+            Swal.showValidationMessage(`El código ${v.codigo} ya está asignado a otro certificado.`);
+            return false;
+          }
+        } catch {
+          Swal.showValidationMessage("No se pudo verificar duplicados. Intenta de nuevo.");
+          return false;
+        }
+        return v.codigo;
       },
     });
 
     if (!isConfirmed || !codigoManual) return;
 
     try {
-      await setDoc(doc(db, "estudiantes_progreso", estId), {
-        [`completado_${cursoId}`]: true,
-        [`codigo_${cursoId}`]: codigoManual,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      const final = await emitirCertificado({
+        codigo: codigoManual,
+        estudianteUid: estId,
+        cursoId,
+        estudianteNombre: estNombre,
+        estudianteDni: estDni,
+        cursoTitulo: curso?.titulo || "",
+        codigoAnterior: codigoPrevio || null,
+      });
 
       setProgresoMap(prev => ({
         ...prev,
         [estId]: {
           ...(prev[estId] || {}),
           [`completado_${cursoId}`]: true,
-          [`codigo_${cursoId}`]: codigoManual,
+          [`codigo_${cursoId}`]: final,
         },
       }));
 
       Swal.fire({
         icon: "success",
-        title: "Curso marcado como completado",
+        title: codigoPrevio ? "Código reasignado" : "Curso marcado como completado",
         html: `
           <p style="font-size:13px;color:#6b7280">Código asignado:</p>
-          <p style="font-size:18px;font-weight:900;letter-spacing:0.2em;margin-top:8px;color:#EF3340">${codigoManual}</p>
+          <p style="font-size:18px;font-weight:900;letter-spacing:0.2em;margin-top:8px;color:#EF3340">${final}</p>
         `,
         confirmButtonColor: COLOR.rojo,
       });
-    } catch {
-      Swal.fire({ icon: "error", title: "Error al marcar", confirmButtonColor: COLOR.rojo });
+    } catch (e) {
+      Swal.fire({
+        icon: "error",
+        title: e.code === "CODIGO_DUPLICADO" ? "Código en uso" : "Error al guardar",
+        text: e.message || "Intenta de nuevo.",
+        confirmButtonColor: COLOR.rojo,
+      });
     }
   };
 
