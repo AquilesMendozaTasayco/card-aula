@@ -71,6 +71,9 @@ export default function AdminCursosPage() {
   const [matriculados, setMatriculados]   = useState([]);
   const [busqMatModal, setBusqMatModal]   = useState("");
   const [busqMatRapido, setBusqMatRapido] = useState("");
+  const [busqDetalle, setBusqDetalle]   = useState("");
+
+  useEffect(() => { if (showDetalle) setBusqDetalle(""); }, [showDetalle]);
   const [progresoMap, setProgresoMap]     = useState({});
 
   useEffect(() => { fetchAll(); }, []);
@@ -772,13 +775,41 @@ export default function AdminCursosPage() {
                     {(showDetalle.matriculados || []).length === 0 ? (
                       <p className="text-[11px] text-stone-300 font-bold">Sin estudiantes matriculados</p>
                     ) : (
-                      <div className="space-y-2">
-                        {estudiantes
-                          .filter(e => (showDetalle.matriculados || []).includes(e.id))
-                          .map(est => (
-                            <FilaEstudiante key={est.id} est={est} cursoId={showDetalle.id} enModal={false} />
-                          ))}
-                      </div>
+                      <>
+                        <div className="relative mb-3">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                          <input
+                            type="text"
+                            placeholder="Buscar por nombre, email o DNI..."
+                            value={busqDetalle}
+                            onChange={e => setBusqDetalle(e.target.value)}
+                            className="w-full border border-stone-200 bg-stone-50 pl-9 pr-8 py-2.5 text-[12px] font-bold text-slate-800 placeholder:text-stone-400 placeholder:font-medium outline-none focus:border-red-400 focus:bg-white transition-colors"
+                          />
+                          {busqDetalle && (
+                            <button onClick={() => setBusqDetalle("")}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-slate-700 transition-colors"
+                              title="Limpiar búsqueda">
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                        {(() => {
+                          const lista = estudiantes.filter(e =>
+                            (showDetalle.matriculados || []).includes(e.id) &&
+                            `${e.nombres} ${e.apellidos} ${e.email} ${e.dni || ""}`.toLowerCase().includes(busqDetalle.toLowerCase())
+                          );
+                          if (lista.length === 0) {
+                            return <p className="text-[11px] text-stone-400 font-bold py-2">Sin resultados para “{busqDetalle}”.</p>;
+                          }
+                          return (
+                            <div className="space-y-2">
+                              {lista.map(est => (
+                                <FilaEstudiante key={est.id} est={est} cursoId={showDetalle.id} enModal={false} />
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </>
                     )}
                   </div>
                 </div>
