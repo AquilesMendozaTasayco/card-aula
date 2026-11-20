@@ -30,7 +30,6 @@ export default function AdminCertificadosPage() {
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [showModal, setShowModal]   = useState(false);
   const [form, setForm]             = useState(FORM_VACIO);
-  const [busqAlumno, setBusqAlumno] = useState("");
   const [guardando, setGuardando]   = useState(false);
 
   useEffect(() => { cargarTodo(); }, []);
@@ -78,47 +77,55 @@ export default function AdminCertificadosPage() {
 
   // ── Nuevo / editar ───────────────────────────────────────────────────
   const abrirNuevo = () => {
-    setForm(FORM_VACIO); setBusqAlumno(""); setShowModal(true);
+    setForm(FORM_VACIO); setShowModal(true);
   };
 
   const abrirEditar = (cert) => {
-    const sinAlumno = !cert.estudianteUid;
     setForm({
       cursoId: cert.cursoId || "",
-      estId: sinAlumno ? "__libre" : cert.estudianteUid,
-      titular: sinAlumno ? (cert.estudianteNombre || "") : "",
+      estId: cert.estudianteUid || "",
+      titular: cert.estudianteNombre || "",
       codigo: cert.codigo, file: null, codigoAnterior: cert.codigo,
     });
-    setBusqAlumno(""); setShowModal(true);
+    setShowModal(true);
   };
 
   const cursoSel = cursoPorId(form.cursoId);
-  const matriculadosDelCurso = useMemo(() => {
-    if (!cursoSel) return [];
-    const ids = cursoSel.matriculados || [];
-    return estudiantes.filter(e => ids.includes(e.id));
-  }, [cursoSel, estudiantes]);
 
-  const alumnosFiltrados = matriculadosDelCurso.filter(e =>
-    `${e.nombres} ${e.apellidos} ${e.email} ${e.dni || ""}`.toLowerCase().includes(busqAlumno.toLowerCase())
-  );
+  // Candidatos del select: matriculados del curso, o todos si es libre.
+  const candidatos = form.cursoId
+    ? estudiantes.filter(e => (cursoSel?.matriculados || []).includes(e.id))
+    : estudiantes;
 
-  const elegirAlumno = async (est) => {
-    const previo = certs.find(c => c.estudianteUid === est.id && c.cursoId === form.cursoId);
+  const onElegirEstudiante = async (id) => {
+    if (!id) {
+      // Titular manual: sin vincular a ningún alumno
+      setForm(f => ({ ...f, estId: "", codigoAnterior: "" }));
+      if (!form.codigo) {
+        const pref = cursoSel ? prefijoCurso(cursoSel.titulo) : `CERT-${new Date().getFullYear()}-`;
+        try { const s = await sugerirSiguiente(pref); setForm(f => ({ ...f, codigo: f.codigo || s })); }
+        catch {}
+      }
+      return;
+    }
+    const e = candidatos.find(x => x.id === id);
+    if (!e) return;
+    const previo = form.cursoId ? certs.find(x => x.estudianteUid === e.id && x.cursoId === form.cursoId) : null;
     let sug = previo ? previo.codigo : "";
-    if (!sug && cursoSel) {
-      try { sug = await sugerirSiguiente(prefijoCurso(cursoSel.titulo)); }
-      catch { sug = `${prefijoCurso(cursoSel?.titulo)}001`; }
+    if (!sug) {
+      const pref = cursoSel ? prefijoCurso(cursoSel.titulo) : `CERT-${new Date().getFullYear()}-`;
+      try { sug = await sugerirSiguiente(pref); }
+      catch { sug = `${pref}001`; }
     }
     setForm(f => ({
-      ...f, estId: est.id,
+      ...f, estId: e.id,
+      titular: `${e.nombres} ${e.apellidos}`,
       codigo: sug, codigoAnterior: previo ? previo.codigo : "",
     }));
   };
 
   const alCambiarCurso = async (cursoId) => {
     setForm(f => ({ ...f, cursoId, estId: "", titular: "", codigo: "", codigoAnterior: "", file: null }));
-    setBusqAlumno("");
     if (!cursoId) {
       try {
         const s = await sugerirSiguiente(`CERT-${new Date().getFullYear()}-`);
@@ -127,22 +134,9 @@ export default function AdminCertificadosPage() {
     }
   };
 
-  const elegirLibre = async () => {
-    const pref = cursoSel ? prefijoCurso(cursoSel.titulo) : `CERT-${new Date().getFullYear()}-`;
-    let sug = "";
-    try { sug = await sugerirSiguiente(pref); }
-    catch { sug = `${pref}001`; }
-    setForm(f => ({ ...f, estId: "__libre", codigo: sug, codigoAnterior: "" }));
-  };
-
   const guardar = async () => {
-    const cursoLibre = !form.cursoId;
-    const estLibre = cursoLibre || form.estId === "__libre" || !form.estId;
-    if (!cursoLibre && !form.estId) {
-      Swal.fire({ icon: "warning", title: "Elige un estudiante o usa titular manual", confirmButtonColor: COLOR.rojo }); return;
-    }
-    if (estLibre && !form.titular.trim()) {
-      Swal.fire({ icon: "warning", title: "Escribe el nombre del titular", confirmButtonColor: COLOR.rojo }); return;
+    if (!form.titular.trim()) {
+      Swal.fire({ icon: "warning", title: "Escribe o elige el titular", confirmButtonColor: COLOR.rojo }); return;
     }
     const v = validarCodigo(form.codigo);
     if (!v.ok) {
@@ -154,19 +148,19 @@ export default function AdminCertificadosPage() {
         Swal.fire({ icon: "error", title: "Código en uso", text: `El código ${v.codigo} ya está asignado a otro certificado.`, confirmButtonColor: COLOR.rojo });
         setGuardando(false); return;
       }
-      const esLibre = !form.cursoId || form.estId === "__libre" || !form.estId;
-      const est = !esLibre ? estPorId(form.estId) : null;
+      const vinculado = !!form.cursoId && !!form.estId;
+      const est = vinculado ? estPorId(form.estId) : null;
       const final = await emitirCertificado({
         codigo: v.codigo,
-        estudianteUid: !esLibre ? form.estId : "",
+        estudianteUid: vinculado ? form.estId : "",
         cursoId: form.cursoId || "",
-        estudianteNombre: !esLibre && est ? `${est.nombres} ${est.apellidos}` : form.titular.trim(),
-        estudianteDni: !esLibre ? (est?.dni || "") : "",
+        estudianteNombre: form.titular.trim(),
+        estudianteDni: vinculado ? (est?.dni || "") : "",
         cursoTitulo: form.cursoId ? (cursoSel?.titulo || "") : "",
         codigoAnterior: form.codigoAnterior || null,
       });
       if (form.file) {
-        const tag = (!esLibre && form.estId) ? form.estId : "libre";
+        const tag = vinculado ? form.estId : "libre";
         const cc = form.cursoId || "libre";
         const r = ref(storage, `certificados/${cc}/${tag}_${Date.now()}_${form.file.name}`);
         await uploadBytes(r, form.file);
@@ -381,63 +375,28 @@ export default function AdminCertificadosPage() {
                   {cursos.map(c => <option key={c.id} value={c.id}>{c.titulo}</option>)}
                 </select>
 
-                {/* 2. Estudiante o titular */}
-                {form.cursoId ? (
-                  <>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">2. Estudiante</p>
-                    <button onClick={elegirLibre}
-                      className={`w-full text-left px-3 py-2.5 mb-2 border transition-colors ${form.estId === "__libre" ? "border-red-400 bg-red-50" : "border-dashed border-stone-300 hover:bg-stone-50"}`}>
-                      <span className="block text-[12px] font-black text-slate-900">Sin estudiante (titular manual)</span>
-                      <span className="block text-[10px] text-stone-400">Para certificados no atados a un alumno</span>
-                    </button>
-                    <div className="relative mb-2">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                      <input type="text" placeholder="Buscar matriculado..."
-                        value={busqAlumno} onChange={e => setBusqAlumno(e.target.value)}
-                        className="w-full border border-stone-200 bg-stone-50 pl-9 pr-3 py-2.5 text-[12px] font-bold text-slate-800 placeholder:text-stone-400 outline-none focus:border-red-400 focus:bg-white" />
-                    </div>
-                    <div className="max-h-48 overflow-y-auto border border-stone-100 divide-y divide-stone-100 mb-5">
-                      {alumnosFiltrados.length === 0 && (
-                        <p className="p-3 text-[11px] text-stone-400 font-bold">Sin resultados.</p>
-                      )}
-                      {alumnosFiltrados.map(e => {
-                        const ya = certs.find(x => x.estudianteUid === e.id && x.cursoId === form.cursoId);
-                        const sel = form.estId === e.id;
-                        return (
-                          <button key={e.id} onClick={() => elegirAlumno(e)}
-                            className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-2 transition-colors ${sel ? "bg-red-50" : "hover:bg-stone-50"}`}>
-                            <span>
-                              <span className="block text-[12px] font-black text-slate-900">{e.nombres} {e.apellidos}</span>
-                              <span className="block text-[10px] text-stone-400">{e.email}{e.dni ? ` · ${e.dni}` : ""}</span>
-                            </span>
-                            {ya
-                              ? <span className="text-[9px] font-black uppercase tracking-wider text-green-600 flex items-center gap-1 flex-shrink-0"><CheckCircle size={11} /> {ya.codigo}</span>
-                              : <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 flex-shrink-0">Sin código</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {(form.estId === "__libre") && (
-                      <>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2 mt-1">Titular del certificado</p>
-                        <input type="text" placeholder="Ej: Juan Pérez Quispe"
-                          value={form.titular} onChange={e => setForm(f => ({ ...f, titular: e.target.value }))}
-                          className="w-full border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] font-bold text-slate-800 placeholder:text-stone-400 outline-none focus:border-red-400 focus:bg-white mb-5" />
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">2. Titular (certificado libre)</p>
-                    <input type="text" placeholder="Ej: Juan Pérez Quispe"
-                      value={form.titular} onChange={e => setForm(f => ({ ...f, titular: e.target.value }))}
-                      className="w-full border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] font-bold text-slate-800 placeholder:text-stone-400 outline-none focus:border-red-400 focus:bg-white mb-5" />
-                  </>
-                )}
+                {/* 2. Estudiante (select: elegir, vacío o manual) + titular */}
+                <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">
+                  2. Estudiante {form.cursoId ? "(matriculados)" : "(todos)"} — opcional
+                </p>
+                <select value={form.estId} onChange={e => onElegirEstudiante(e.target.value)}
+                  className="w-full border border-stone-200 bg-stone-50 px-3 py-3 text-[12px] font-bold text-slate-800 outline-none focus:border-red-400 focus:bg-white mb-2">
+                  <option value="">✎ Titular manual (escribir abajo, sin vincular)</option>
+                  {candidatos.map(e => {
+                    const ya = form.cursoId ? certs.find(x => x.estudianteUid === e.id && x.cursoId === form.cursoId) : null;
+                    return (
+                      <option key={e.id} value={e.id}>
+                        {e.nombres} {e.apellidos} — {e.email}{ya ? ` · ${ya.codigo}` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">Titular del certificado</p>
+                <input type="text" placeholder="Ej: Juan Pérez Quispe"
+                  value={form.titular} onChange={e => setForm(f => ({ ...f, titular: e.target.value }))}
+                  className="w-full border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] font-bold text-slate-800 placeholder:text-stone-400 outline-none focus:border-red-400 focus:bg-white mb-5" />
 
                 {/* 3. Código */}
-                {(form.estId || !form.cursoId) && (
-                  <>
                     <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">3. Código manual</p>
                     <input type="text" value={form.codigo}
                       onChange={e => setForm(f => ({ ...f, codigo: e.target.value.toUpperCase() }))}
@@ -452,15 +411,13 @@ export default function AdminCertificadosPage() {
                       <input type="file" accept=".pdf,image/*" className="hidden"
                         onChange={e => setForm(f => ({ ...f, file: e.target.files?.[0] || null }))} />
                     </label>
-                  </>
-                )}
 
                 <div className="flex gap-2">
                   <button onClick={() => setShowModal(false)}
                     className="flex-1 py-3.5 text-[10px] font-black uppercase tracking-widest border border-stone-200 text-stone-600 hover:bg-stone-50 transition-colors">
                     Cancelar
                   </button>
-                  <button onClick={guardar} disabled={guardando || !((form.cursoId && form.estId) || !form.cursoId)}
+                  <button onClick={guardar} disabled={guardando}
                     className="flex-1 py-3.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
                     style={{ backgroundColor: COLOR.rojo }}>
                     {guardando ? "Guardando..." : "Guardar certificado"}
