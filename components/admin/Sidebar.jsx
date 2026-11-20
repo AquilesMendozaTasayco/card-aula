@@ -23,7 +23,7 @@ const MENU_ADMIN = [
   { label: "Cursos",         href: "/admin/cursos",           icon: BookOpen },
   { label: "Estudiantes",    href: "/admin/estudiantes",      icon: Users },
   // { label: "Evaluaciones",   href: "/admin/evaluaciones",     icon: ClipboardList },
-  // { label: "Certificados",   href: "/admin/certificados",     icon: GraduationCap },
+  { label: "Certificados",   href: "/admin/certificados",     icon: Award },
   // { label: "Reportes",       href: "/admin/reportes",         icon: BarChart3 },
   // { label: "Notificaciones", href: "/admin/notificaciones",   icon: Bell },
   // { label: "Configuración",  href: "/admin/configuracion",    icon: Settings },
