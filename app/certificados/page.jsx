@@ -67,8 +67,8 @@ export default function ValidarCertificadoPage() {
             return;
           }
           const [cursoVivo, estVivo] = await Promise.all([
-            buscarCurso(cert.cursoId),
-            buscarEstudiante(cert.estudianteUid),
+            cert.cursoId ? buscarCurso(cert.cursoId) : null,
+            cert.estudianteUid ? buscarEstudiante(cert.estudianteUid) : null,
           ]);
           setResultado({
             curso: cursoVivo || { id: cert.cursoId, titulo: cert.cursoTitulo || "Curso" },
