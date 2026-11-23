@@ -8,7 +8,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import {
   validarCodigo, prefijoCurso, sugerirSiguiente, codigoEnUso,
-  emitirCertificado, vincularPdf, revocarCertificado, listarTodos,
+  emitirCertificado, vincularPdf, revocarCertificado, reactivarCertificado, listarTodos,
 } from "@/lib/certificados";
 import Swal from "sweetalert2";
 import {
@@ -18,7 +18,7 @@ import {
 
 const COLOR = { rojo: "#EF3340", naranja: "#D65B2B", marron: "#8B4513" };
 
-const FORM_VACIO = { cursoId: "", estId: "", titular: "", codigo: "", file: null, codigoAnterior: "" };
+const FORM_VACIO = { cursoId: "", cursoTitulo: "", estId: "", titular: "", codigo: "", file: null, codigoAnterior: "" };
 
 export default function AdminCertificadosPage() {
   const [certs, setCerts]           = useState([]);
@@ -83,6 +83,7 @@ export default function AdminCertificadosPage() {
   const abrirEditar = (cert) => {
     setForm({
       cursoId: cert.cursoId || "",
+      cursoTitulo: cert.cursoTitulo || cursoPorId(cert.cursoId)?.titulo || "",
       estId: cert.estudianteUid || "",
       titular: cert.estudianteNombre || "",
       codigo: cert.codigo, file: null, codigoAnterior: cert.codigo,
@@ -125,7 +126,8 @@ export default function AdminCertificadosPage() {
   };
 
   const alCambiarCurso = async (cursoId) => {
-    setForm(f => ({ ...f, cursoId, estId: "", titular: "", codigo: "", codigoAnterior: "", file: null }));
+    const sel = cursoPorId(cursoId);
+    setForm(f => ({ ...f, cursoId, estId: "", titular: "", codigo: "", codigoAnterior: "", file: null, cursoTitulo: sel?.titulo || "" }));
     if (!cursoId) {
       try {
         const s = await sugerirSiguiente(`CERT-${new Date().getFullYear()}-`);
@@ -138,6 +140,10 @@ export default function AdminCertificadosPage() {
     if (!form.titular.trim()) {
       Swal.fire({ icon: "warning", title: "Escribe o elige el titular", confirmButtonColor: COLOR.rojo }); return;
     }
+    const tituloFinal = (form.cursoTitulo || "").trim() || (cursoSel?.titulo || "");
+    if (!form.cursoId && !tituloFinal) {
+      Swal.fire({ icon: "warning", title: "Escribe la mención del curso", text: "Para un certificado libre debes colocar el nombre / mención del curso.", confirmButtonColor: COLOR.rojo }); return;
+    }
     const v = validarCodigo(form.codigo);
     if (!v.ok) {
       Swal.fire({ icon: "warning", title: "Código inválido", text: v.error, confirmButtonColor: COLOR.rojo }); return;
@@ -145,7 +151,7 @@ export default function AdminCertificadosPage() {
     setGuardando(true);
     try {
       if (await codigoEnUso(v.codigo, form.codigoAnterior || null)) {
-        Swal.fire({ icon: "error", title: "Código en uso", text: `El código ${v.codigo} ya está asignado a otro certificado.`, confirmButtonColor: COLOR.rojo });
+        Swal.fire({ icon: "error", title: "Código en uso", text: `El código ${v.codigo} ya está asignado a otro certificado. Si quieres reemplazar el PDF manteniendo el mismo código, usa el botón Editar (lápiz) del certificado existente en lugar de crear uno nuevo.`, confirmButtonColor: COLOR.rojo });
         setGuardando(false); return;
       }
       const vinculado = !!form.cursoId && !!form.estId;
@@ -156,7 +162,7 @@ export default function AdminCertificadosPage() {
         cursoId: form.cursoId || "",
         estudianteNombre: form.titular.trim(),
         estudianteDni: vinculado ? (est?.dni || "") : "",
-        cursoTitulo: form.cursoId ? (cursoSel?.titulo || "") : "",
+        cursoTitulo: tituloFinal,
         codigoAnterior: form.codigoAnterior || null,
       });
       if (form.file) {
@@ -182,7 +188,7 @@ export default function AdminCertificadosPage() {
   const revocar = async (cert) => {
     const res = await Swal.fire({
       title: "¿Revocar certificado?",
-      html: `El código <b>${cert.codigo}</b> dejará de validar.<br/>El historial se conserva.`,
+      html: `El código <b>${cert.codigo}</b> dejará de validar.<br/>El historial se conserva y podrás reactivarlo después.`,
       icon: "warning", showCancelButton: true,
       confirmButtonColor: COLOR.rojo, cancelButtonColor: "#6b7280",
       confirmButtonText: "Sí, revocar", cancelButtonText: "Cancelar",
@@ -195,6 +201,25 @@ export default function AdminCertificadosPage() {
       Swal.fire({ icon: "success", title: "Revocado", timer: 1200, showConfirmButton: false });
     } catch {
       Swal.fire({ icon: "error", title: "No se pudo revocar", confirmButtonColor: COLOR.rojo });
+    }
+  };
+
+  const reactivar = async (cert) => {
+    const res = await Swal.fire({
+      title: "¿Reactivar certificado?",
+      html: `El código <b>${cert.codigo}</b> volverá a validar como activo.`,
+      icon: "question", showCancelButton: true,
+      confirmButtonColor: "#16a34a", cancelButtonColor: "#6b7280",
+      confirmButtonText: "Sí, reactivar", cancelButtonText: "Cancelar",
+      customClass: { popup: "rounded-2xl" },
+    });
+    if (!res.isConfirmed) return;
+    try {
+      await reactivarCertificado(cert.codigo);
+      await cargarTodo();
+      Swal.fire({ icon: "success", title: "Reactivado", timer: 1200, showConfirmButton: false });
+    } catch {
+      Swal.fire({ icon: "error", title: "No se pudo reactivar", confirmButtonColor: COLOR.rojo });
     }
   };
 
@@ -328,17 +353,20 @@ export default function AdminCertificadosPage() {
                       className="p-2 border border-stone-200 text-stone-500 hover:bg-stone-50 transition-colors">
                       <Copy size={13} />
                     </button>
-                    {!revocado && (
-                      <>
-                        <button onClick={() => abrirEditar(c)} title="Reasignar código"
-                          className="p-2 text-white transition-all hover:brightness-110" style={{ backgroundColor: COLOR.naranja }}>
-                          <Pencil size={13} />
-                        </button>
-                        <button onClick={() => revocar(c)} title="Revocar"
-                          className="p-2 border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
-                          <Ban size={13} />
-                        </button>
-                      </>
+                    <button onClick={() => abrirEditar(c)} title="Editar / reemplazar PDF manteniendo el código"
+                      className="p-2 text-white transition-all hover:brightness-110" style={{ backgroundColor: COLOR.naranja }}>
+                      <Pencil size={13} />
+                    </button>
+                    {!revocado ? (
+                      <button onClick={() => revocar(c)} title="Revocar"
+                        className="p-2 border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+                        <Ban size={13} />
+                      </button>
+                    ) : (
+                      <button onClick={() => reactivar(c)} title="Reactivar"
+                        className="p-2 border border-green-200 text-green-600 hover:bg-green-50 transition-colors">
+                        <CheckCircle size={13} />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -370,10 +398,15 @@ export default function AdminCertificadosPage() {
                 {/* 1. Curso (opcional) */}
                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">1. Curso (opcional)</p>
                 <select value={form.cursoId} onChange={e => alCambiarCurso(e.target.value)}
-                  className="w-full border border-stone-200 bg-stone-50 px-3 py-3 text-[12px] font-bold text-slate-800 outline-none focus:border-red-400 focus:bg-white mb-5">
+                  className="w-full border border-stone-200 bg-stone-50 px-3 py-3 text-[12px] font-bold text-slate-800 outline-none focus:border-red-400 focus:bg-white mb-2">
                   <option value="">Sin curso (certificado libre)</option>
                   {cursos.map(c => <option key={c.id} value={c.id}>{c.titulo}</option>)}
                 </select>
+                <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">Mención / Nombre del curso</p>
+                <input type="text" placeholder="Ej: Mención en Didáctica de la Matemática"
+                  value={form.cursoTitulo} onChange={e => setForm(f => ({ ...f, cursoTitulo: e.target.value }))}
+                  className="w-full border border-stone-200 bg-stone-50 px-3 py-2.5 text-[12px] font-bold text-slate-800 placeholder:text-stone-400 outline-none focus:border-red-400 focus:bg-white mb-1" />
+                <p className="text-[10px] text-stone-400 mb-5">Si eliges un curso se autocompleta pero puedes editarlo. Si es libre, escríbelo aquí.</p>
 
                 {/* 2. Estudiante (select: elegir, vacío o manual) + titular */}
                 <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">

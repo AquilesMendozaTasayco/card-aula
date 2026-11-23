@@ -183,7 +183,7 @@ export default function ValidarCertificadoPage() {
                     <Hash className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" />
                     <input type="text" placeholder="XXXX-YYYY-ZZZZ" value={codigo}
                       onChange={e => setCodigo(e.target.value.toUpperCase())}
-                      required maxLength={20}
+                      required maxLength={40}
                       className="w-full border-b-2 border-stone-200 bg-transparent pl-7 py-2 text-sm font-black tracking-widest text-slate-900 outline-none transition-all focus:border-red-500 uppercase" />
                   </div>
                   <p className="text-[10px] text-stone-400 mt-2">Ingresa el código que recibiste al completar tu curso.</p>
@@ -250,7 +250,7 @@ export default function ValidarCertificadoPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: "spring", damping: 20, stiffness: 260 }}
-              className="relative w-full max-w-md bg-white shadow-[0_40px_100px_rgba(0,0,0,0.35)] overflow-hidden z-10">
+              className="relative w-full max-w-lg bg-white shadow-[0_40px_100px_rgba(0,0,0,0.35)] overflow-hidden z-10 max-h-[90vh] overflow-y-auto">
 
               {/* Barra triple */}
               <div className="h-1.5 w-full flex">
@@ -336,14 +336,24 @@ export default function ValidarCertificadoPage() {
                   </p>
                 </div>
 
-                {/* Acciones */}
+                {/* Vista previa + Acciones */}
                 <div className="space-y-2 pt-1">
                   {resultado.urlCertificado ? (
-                    <a href={resultado.urlCertificado} target="_blank" rel="noreferrer" download
-                      className="w-full flex items-center justify-center gap-2 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:translate-y-[-2px] shadow-lg"
-                      style={{ backgroundColor: colorNaranja }}>
-                      <Download size={16} /> Descargar Certificado
-                    </a>
+                    <>
+                      <div className="border border-stone-200 overflow-hidden">
+                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-stone-400 px-3 pt-2">Vista previa</p>
+                        {/\.(png|jpe?g|webp|gif)(\?|#|$)/i.test(resultado.urlCertificado) ? (
+                          <img src={resultado.urlCertificado} alt={`Certificado ${resultado.codigo}`} className="w-full max-h-[320px] object-contain bg-stone-50" />
+                        ) : (
+                          <iframe src={resultado.urlCertificado} title={`Vista previa ${resultado.codigo}`} className="w-full h-[320px] bg-stone-50" />
+                        )}
+                      </div>
+                      <a href={resultado.urlCertificado} target="_blank" rel="noreferrer" download
+                        className="w-full flex items-center justify-center gap-2 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:translate-y-[-2px] shadow-lg"
+                        style={{ backgroundColor: colorNaranja }}>
+                        <Download size={16} /> Descargar Certificado
+                      </a>
+                    </>
                   ) : (
                     <div className="p-3 bg-stone-50 border border-dashed border-stone-200 text-center">
                       <p className="text-[11px] text-stone-400 font-bold">Certificado físico pendiente de emisión</p>
