@@ -32,6 +32,7 @@ const MENU_ADMIN = [
 const MENU_ESTUDIANTE = [
   { label: "Inicio",         href: "/estudiante/dashboard",      icon: LayoutDashboard },
   { label: "Mis Cursos",     href: "/estudiante/cursos",         icon: BookOpen },
+  { label: "Simulacros",     href: "/estudiante/simulacros",     icon: ClipboardCheck },
   // { label: "Mis Clases",     href: "/estudiante/clases",         icon: PlayCircle },
   // { label: "Evaluaciones",   href: "/estudiante/evaluaciones",   icon: ClipboardCheck },
   // { label: "Certificados",   href: "/estudiante/certificados",   icon: Award },
